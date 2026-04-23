@@ -16,6 +16,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getBaby } from '@/src/db/babies';
 import { listDiaries, listDiariesInRange } from '@/src/db/diaries';
+import { exportBackup } from '@/src/services/backup';
 import { exportDiariesAsPdf } from '@/src/services/pdfExport';
 import type { Baby } from '@/src/types';
 import { getActiveBabyId } from '@/src/utils/activeBaby';
@@ -56,6 +57,23 @@ export default function ExportScreen() {
       });
       if (!result.ok) {
         Alert.alert('내보내기 실패', result.message);
+      }
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const exportZipBackup = async () => {
+    setExporting('zip');
+    try {
+      const result = await exportBackup();
+      if (!result.ok) {
+        Alert.alert('백업 실패', result.message);
+      } else {
+        Alert.alert(
+          '백업 완료',
+          `아기 ${result.stats.babies}명, 일기 ${result.stats.diaries}개, 사진 ${result.stats.photos}장이 포함됐어요.`
+        );
       }
     } finally {
       setExporting(null);
@@ -131,6 +149,23 @@ export default function ExportScreen() {
           disabled={exporting !== null}
           onPress={exportAll}
         />
+
+        <View style={{ height: 16 }} />
+        <Text style={[styles.sectionLabel, { color: palette.textMuted }]}>
+          전체 백업
+        </Text>
+        <Text style={[styles.desc, { color: palette.textMuted }]}>
+          복원을 위한 zip 파일을 만듭니다. 기기 변경 시 "가져오기"로 복원할 수
+          있어요.
+        </Text>
+        <Option
+          palette={palette}
+          label="백업 파일 (.zip) 내보내기"
+          sublabel="모든 일기 + 사진 + 설정"
+          loading={exporting === 'zip'}
+          disabled={exporting !== null}
+          onPress={exportZipBackup}
+        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -179,6 +214,12 @@ function Option({
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 24, fontWeight: '700' },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
   desc: { fontSize: 13, lineHeight: 20 },
   card: {
     padding: 16,
