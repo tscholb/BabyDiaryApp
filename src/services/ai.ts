@@ -89,7 +89,7 @@ async function readErrorBody(res: Response): Promise<string> {
 }
 
 async function callGemini(key: string, input: GenerateInput): Promise<AiResult> {
-  const model = 'gemini-2.0-flash';
+  const model = 'gemini-1.5-flash';
   const images = await Promise.all(
     input.photoUris.slice(0, 4).map(async uri => ({
       inlineData: { mimeType: 'image/jpeg', data: await photoToBase64(uri) },
