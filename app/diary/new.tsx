@@ -27,7 +27,7 @@ import { deletePhoto, persistPhoto } from '@/src/services/photoStorage';
 import type { Baby } from '@/src/types';
 import { getActiveBabyId } from '@/src/utils/activeBaby';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
-import { prettyDate, todayISO } from '@/src/utils/date';
+import { parseExifDate, prettyDate, todayISO } from '@/src/utils/date';
 import { safeBack } from '@/src/utils/navigation';
 
 const MAX_PHOTOS = 8;
@@ -49,6 +49,10 @@ export default function DiaryEditorScreen() {
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiUsed, setAiUsed] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [dateAutoSet, setDateAutoSet] = useState(false);
+  const [userTouchedDate, setUserTouchedDate] = useState(
+    Boolean(date) || Boolean(id)
+  );
 
   useEffect(() => {
     (async () => {
@@ -95,6 +99,7 @@ export default function DiaryEditorScreen() {
       allowsMultipleSelection: true,
       selectionLimit: remaining,
       quality: 1,
+      exif: true,
     });
     if (result.canceled) return;
 
@@ -103,9 +108,23 @@ export default function DiaryEditorScreen() {
         result.assets.map(a => persistPhoto(a.uri))
       );
       setPhotoUris(prev => [...prev, ...stored]);
+      maybeApplyExifDate(result.assets);
     } catch (e) {
       Alert.alert('사진 저장 실패', e instanceof Error ? e.message : String(e));
     }
+  };
+
+  const maybeApplyExifDate = (assets: ImagePicker.ImagePickerAsset[]) => {
+    if (userTouchedDate || editingId) return;
+    const dates = assets
+      .map(a => parseExifDate(a.exif as Record<string, unknown> | null))
+      .filter((d): d is string => Boolean(d))
+      .sort();
+    if (dates.length === 0) return;
+    const first = dates[0];
+    if (first === entryDate) return;
+    setEntryDate(first);
+    setDateAutoSet(true);
   };
 
   const takePhoto = async () => {
@@ -118,11 +137,12 @@ export default function DiaryEditorScreen() {
       Alert.alert('카메라 접근 권한이 필요해요');
       return;
     }
-    const result = await ImagePicker.launchCameraAsync({ quality: 1 });
+    const result = await ImagePicker.launchCameraAsync({ quality: 1, exif: true });
     if (result.canceled) return;
     try {
       const stored = await persistPhoto(result.assets[0].uri);
       setPhotoUris(prev => [...prev, stored]);
+      maybeApplyExifDate(result.assets);
     } catch (e) {
       Alert.alert('사진 저장 실패', e instanceof Error ? e.message : String(e));
     }
@@ -235,6 +255,11 @@ export default function DiaryEditorScreen() {
               <Text style={[styles.metaAge, { color: palette.textMuted }]}>
                 {baby.name} · {ageLabel}
               </Text>
+              {dateAutoSet && (
+                <Text style={[styles.metaHint, { color: palette.tint }]}>
+                  사진 촬영일로 자동 설정됐어요
+                </Text>
+              )}
             </View>
           </View>
 
@@ -366,6 +391,7 @@ const styles = StyleSheet.create({
   },
   metaDate: { fontSize: 18, fontWeight: '700' },
   metaAge: { fontSize: 13, marginTop: 4 },
+  metaHint: { fontSize: 12, marginTop: 6, fontWeight: '500' },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
