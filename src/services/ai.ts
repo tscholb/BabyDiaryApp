@@ -88,63 +88,100 @@ async function readErrorBody(res: Response): Promise<string> {
   }
 }
 
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+
+async function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function tryGeminiModel(
+  model: string,
+  key: string,
+  body: string
+): Promise<Response> {
+  return fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    }
+  );
+}
+
 async function callGemini(key: string, input: GenerateInput): Promise<AiResult> {
-  const model = 'gemini-2.5-flash';
   const images = await Promise.all(
     input.photoUris.slice(0, 4).map(async uri => ({
       inlineData: { mimeType: 'image/jpeg', data: await photoToBase64(uri) },
     }))
   );
+  const body = JSON.stringify({
+    contents: [{ parts: [{ text: PROMPT(input) }, ...images] }],
+  });
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: PROMPT(input) }, ...images] }],
-      }),
+  let lastRes: Response | null = null;
+  let lastDetail = '';
+
+  for (const model of GEMINI_MODELS) {
+    let res = await tryGeminiModel(model, key, body);
+
+    if (res.status === 503) {
+      await sleep(1500);
+      res = await tryGeminiModel(model, key, body);
     }
-  );
+    if (res.status === 503) {
+      await sleep(3000);
+      res = await tryGeminiModel(model, key, body);
+    }
 
-  if (res.status === 401 || res.status === 403) {
-    const detail = await readErrorBody(res);
-    await updateAiSettings({ keyStatus: 'invalid' });
-    return {
-      ok: false,
-      reason: 'invalid_key',
-      message: `API 키가 유효하지 않아요. ${detail ? `(${detail})` : ''}`.trim(),
-    };
-  }
-  if (res.status === 429) {
-    const resetAt = new Date();
-    resetAt.setHours(24, 0, 0, 0);
-    await handleRateLimit('gemini', resetAt);
-    return {
-      ok: false,
-      reason: 'rate_limited',
-      message: '오늘 AI 사용량을 다 썼어요. 내일 리셋됩니다.',
-    };
-  }
-  if (!res.ok) {
-    const detail = await readErrorBody(res);
-    return {
-      ok: false,
-      reason: 'unknown',
-      message: `AI 호출 실패 (${res.status}): ${detail}`,
-    };
+    lastRes = res;
+
+    if (res.status === 401 || res.status === 403) {
+      const detail = await readErrorBody(res);
+      await updateAiSettings({ keyStatus: 'invalid' });
+      return {
+        ok: false,
+        reason: 'invalid_key',
+        message: `API 키가 유효하지 않아요. ${detail ? `(${detail})` : ''}`.trim(),
+      };
+    }
+    if (res.status === 429) {
+      const resetAt = new Date();
+      resetAt.setHours(24, 0, 0, 0);
+      await handleRateLimit('gemini', resetAt);
+      return {
+        ok: false,
+        reason: 'rate_limited',
+        message: '오늘 AI 사용량을 다 썼어요. 내일 리셋됩니다.',
+      };
+    }
+
+    if (res.ok) {
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text as
+        | string
+        | undefined;
+      if (!text) {
+        return { ok: false, reason: 'unknown', message: 'AI 응답이 비어있어요.' };
+      }
+      await updateAiSettings({ keyStatus: 'ok', rateLimitResetAt: null });
+      return { ok: true, text: text.trim() };
+    }
+
+    if (res.status === 503 || res.status === 500 || res.status === 404) {
+      lastDetail = await readErrorBody(res);
+      continue;
+    }
+
+    lastDetail = await readErrorBody(res);
+    break;
   }
 
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text as
-    | string
-    | undefined;
-  if (!text) {
-    return { ok: false, reason: 'unknown', message: 'AI 응답이 비어있어요.' };
-  }
-
-  await updateAiSettings({ keyStatus: 'ok', rateLimitResetAt: null });
-  return { ok: true, text: text.trim() };
+  return {
+    ok: false,
+    reason: 'unknown',
+    message: `AI 호출 실패 (${lastRes?.status ?? '?'}): ${lastDetail}`,
+  };
 }
 
 async function callClaude(key: string, input: GenerateInput): Promise<AiResult> {
