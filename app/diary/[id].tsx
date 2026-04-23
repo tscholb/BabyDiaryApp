@@ -20,6 +20,7 @@ import { deletePhoto } from '@/src/services/photoStorage';
 import type { Baby, DiaryWithPhotos } from '@/src/types';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { prettyDate } from '@/src/utils/date';
+import { safeBack } from '@/src/utils/navigation';
 
 export default function DiaryDetailScreen() {
   const router = useRouter();
@@ -54,7 +55,7 @@ export default function DiaryDetailScreen() {
             const uris = diary.photos.map(p => p.uri);
             await deleteDiary(diary.id);
             await Promise.all(uris.map(u => deletePhoto(u)));
-            router.back();
+            safeBack();
           },
         },
       ]
@@ -72,7 +73,7 @@ export default function DiaryDetailScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: palette.background }} edges={['top']}>
       <View style={[styles.header, { borderBottomColor: palette.border }]}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
+        <Pressable onPress={() => safeBack()} hitSlop={12}>
           <Text style={[styles.headerBtn, { color: palette.textMuted }]}>뒤로</Text>
         </Pressable>
         <View style={{ flexDirection: 'row', gap: 16 }}>

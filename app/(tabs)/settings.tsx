@@ -193,7 +193,7 @@ function statusLabel(s: AiSettings) {
     case 'ok': return '정상';
     case 'invalid': return '키 오류';
     case 'rate_limited': return '한도 초과';
-    default: return '미설정';
+    default: return '준비됨';
   }
 }
 

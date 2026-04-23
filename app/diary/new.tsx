@@ -28,6 +28,7 @@ import type { Baby } from '@/src/types';
 import { getActiveBabyId } from '@/src/utils/activeBaby';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { prettyDate, todayISO } from '@/src/utils/date';
+import { safeBack } from '@/src/utils/navigation';
 
 const MAX_PHOTOS = 8;
 
@@ -178,7 +179,7 @@ export default function DiaryEditorScreen() {
           aiGenerated: aiUsed,
         });
       }
-      router.back();
+      safeBack();
     } catch (e) {
       Alert.alert('저장 실패', e instanceof Error ? e.message : String(e));
     } finally {
@@ -191,7 +192,7 @@ export default function DiaryEditorScreen() {
       const toDiscard = photoUris.filter(u => !originalPhotoUris.includes(u));
       await Promise.all(toDiscard.map(u => deletePhoto(u)));
     }
-    router.back();
+    safeBack();
   };
 
   if (!baby) return null;

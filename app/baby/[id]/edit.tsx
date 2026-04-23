@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   Alert,
@@ -13,11 +13,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getBaby, updateBaby } from '@/src/db/babies';
+import { safeBack } from '@/src/utils/navigation';
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 export default function EditBabyScreen() {
-  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const babyId = Number(id);
   const scheme = useColorScheme() ?? 'light';
@@ -48,7 +48,7 @@ export default function EditBabyScreen() {
     setSaving(true);
     try {
       await updateBaby(babyId, { name: name.trim(), birthDate });
-      router.back();
+      safeBack();
     } catch (e) {
       Alert.alert('저장 실패', e instanceof Error ? e.message : String(e));
     } finally {

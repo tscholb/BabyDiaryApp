@@ -131,7 +131,7 @@ export default function AiSettingsScreen() {
         <View style={[styles.card, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
           <Text style={[styles.rowLabel, { color: palette.text }]}>상태</Text>
           <Text style={[styles.rowSub, { color: palette.textMuted }]}>
-            {describe(settings)}
+            {describe(settings, currentKeyPresent)}
           </Text>
         </View>
       </ScrollView>
@@ -139,7 +139,8 @@ export default function AiSettingsScreen() {
   );
 }
 
-function describe(s: AiSettings): string {
+function describe(s: AiSettings, hasKey: boolean): string {
+  if (!hasKey) return 'API 키가 저장되지 않았어요';
   switch (s.keyStatus) {
     case 'ok': return '정상 작동 중';
     case 'invalid': return 'API 키가 유효하지 않아요. 새 키를 입력해주세요.';
@@ -147,7 +148,7 @@ function describe(s: AiSettings): string {
       return s.rateLimitResetAt
         ? `사용량 초과 — ${new Date(s.rateLimitResetAt).toLocaleString('ko-KR')}에 리셋 예정`
         : '사용량 초과';
-    default: return '아직 사용 이력 없음';
+    default: return '키 저장됨 · 첫 사용 시 자동 검증';
   }
 }
 

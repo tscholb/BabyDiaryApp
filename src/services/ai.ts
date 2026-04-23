@@ -69,6 +69,25 @@ async function handleRateLimit(provider: AiProvider, resetAt: Date) {
   await scheduleRateLimitResetNotification(provider, resetAt);
 }
 
+async function readErrorBody(res: Response): Promise<string> {
+  try {
+    const text = await res.text();
+    try {
+      const json = JSON.parse(text);
+      const msg =
+        json?.error?.message ??
+        json?.error?.code ??
+        json?.message ??
+        text.slice(0, 200);
+      return String(msg);
+    } catch {
+      return text.slice(0, 200);
+    }
+  } catch {
+    return '';
+  }
+}
+
 async function callGemini(key: string, input: GenerateInput): Promise<AiResult> {
   const model = 'gemini-2.0-flash';
   const images = await Promise.all(
@@ -89,8 +108,13 @@ async function callGemini(key: string, input: GenerateInput): Promise<AiResult> 
   );
 
   if (res.status === 401 || res.status === 403) {
+    const detail = await readErrorBody(res);
     await updateAiSettings({ keyStatus: 'invalid' });
-    return { ok: false, reason: 'invalid_key', message: 'API 키가 유효하지 않아요.' };
+    return {
+      ok: false,
+      reason: 'invalid_key',
+      message: `API 키가 유효하지 않아요. ${detail ? `(${detail})` : ''}`.trim(),
+    };
   }
   if (res.status === 429) {
     const resetAt = new Date();
@@ -103,10 +127,11 @@ async function callGemini(key: string, input: GenerateInput): Promise<AiResult> 
     };
   }
   if (!res.ok) {
+    const detail = await readErrorBody(res);
     return {
       ok: false,
       reason: 'unknown',
-      message: `AI 호출 실패 (${res.status})`,
+      message: `AI 호출 실패 (${res.status}): ${detail}`,
     };
   }
 
@@ -154,8 +179,13 @@ async function callClaude(key: string, input: GenerateInput): Promise<AiResult> 
   });
 
   if (res.status === 401 || res.status === 403) {
+    const detail = await readErrorBody(res);
     await updateAiSettings({ keyStatus: 'invalid' });
-    return { ok: false, reason: 'invalid_key', message: 'API 키가 유효하지 않아요.' };
+    return {
+      ok: false,
+      reason: 'invalid_key',
+      message: `API 키가 유효하지 않아요. ${detail ? `(${detail})` : ''}`.trim(),
+    };
   }
   if (res.status === 429) {
     const resetAt = new Date(Date.now() + 60_000);
@@ -167,10 +197,11 @@ async function callClaude(key: string, input: GenerateInput): Promise<AiResult> 
     };
   }
   if (!res.ok) {
+    const detail = await readErrorBody(res);
     return {
       ok: false,
       reason: 'unknown',
-      message: `AI 호출 실패 (${res.status})`,
+      message: `AI 호출 실패 (${res.status}): ${detail}`,
     };
   }
 
@@ -211,8 +242,13 @@ async function callOpenAI(key: string, input: GenerateInput): Promise<AiResult> 
   });
 
   if (res.status === 401 || res.status === 403) {
+    const detail = await readErrorBody(res);
     await updateAiSettings({ keyStatus: 'invalid' });
-    return { ok: false, reason: 'invalid_key', message: 'API 키가 유효하지 않아요.' };
+    return {
+      ok: false,
+      reason: 'invalid_key',
+      message: `API 키가 유효하지 않아요. ${detail ? `(${detail})` : ''}`.trim(),
+    };
   }
   if (res.status === 429) {
     const resetAt = new Date(Date.now() + 60_000);
@@ -224,10 +260,11 @@ async function callOpenAI(key: string, input: GenerateInput): Promise<AiResult> 
     };
   }
   if (!res.ok) {
+    const detail = await readErrorBody(res);
     return {
       ok: false,
       reason: 'unknown',
-      message: `AI 호출 실패 (${res.status})`,
+      message: `AI 호출 실패 (${res.status}): ${detail}`,
     };
   }
 
