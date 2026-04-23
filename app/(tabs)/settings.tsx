@@ -18,6 +18,7 @@ import { getAiSettings, updateAiSettings } from '@/src/services/aiSettings';
 import {
   cancelRateLimitNotification,
   ensureNotificationPermission,
+  isNotificationsAvailable,
 } from '@/src/services/notifications';
 import type { AiSettings, Baby } from '@/src/types';
 import { getActiveBabyId } from '@/src/utils/activeBaby';
@@ -42,7 +43,7 @@ export default function SettingsScreen() {
   );
 
   const toggleAi = async (enabled: boolean) => {
-    if (enabled) {
+    if (enabled && isNotificationsAvailable()) {
       const granted = await ensureNotificationPermission();
       if (!granted) {
         Alert.alert(
@@ -50,7 +51,7 @@ export default function SettingsScreen() {
           'AI 사용량 리셋 알림을 보내려면 알림 권한을 허용해주세요.'
         );
       }
-    } else {
+    } else if (!enabled) {
       await Promise.all([
         cancelRateLimitNotification('gemini'),
         cancelRateLimitNotification('claude'),
