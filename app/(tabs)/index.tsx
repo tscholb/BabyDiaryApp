@@ -147,10 +147,24 @@ export default function FeedScreen() {
               { backgroundColor: palette.surface, borderColor: palette.border },
             ]}>
             {item.photos.length > 0 && (
-              <Image
-                source={{ uri: item.photos[0].uri }}
-                style={styles.cardImage}
-              />
+              <View style={styles.coverWrap}>
+                <Image
+                  source={{ uri: item.photos[0].uri }}
+                  style={styles.cardImage}
+                />
+                {item.photos.length > 1 && (
+                  <View style={styles.photoBadge}>
+                    <IconSymbol
+                      name="photo.on.rectangle"
+                      size={12}
+                      color="#fff"
+                    />
+                    <Text style={styles.photoBadgeText}>
+                      {item.photos.length}
+                    </Text>
+                  </View>
+                )}
+              </View>
             )}
             <View style={styles.cardBody}>
               <View style={styles.cardMeta}>
@@ -200,8 +214,31 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 1,
   },
+  coverWrap: { position: 'relative' },
   cardImage: { width: '100%', height: 240 },
+  photoBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  photoBadgeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
   cardBody: { padding: 16, gap: 6 },
   cardMeta: {
     flexDirection: 'row',

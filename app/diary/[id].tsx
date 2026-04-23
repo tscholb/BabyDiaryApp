@@ -2,7 +2,6 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   Alert,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { PhotoCollage } from '@/src/components/PhotoCollage';
 import { getBaby } from '@/src/db/babies';
 import { deleteDiary, getDiary } from '@/src/db/diaries';
 import { deletePhoto } from '@/src/services/photoStorage';
@@ -88,31 +88,46 @@ export default function DiaryDetailScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
-        <View>
-          <Text style={[styles.date, { color: palette.text }]}>
-            {prettyDate(diary.entryDate)}
-          </Text>
-          {baby && (
-            <Text style={[styles.age, { color: palette.textMuted }]}>
-              {baby.name} · {getBabyAgeLabel(baby.birthDate, new Date(diary.entryDate))}
+      <ScrollView
+        contentContainerStyle={{ padding: 20, paddingBottom: 60 }}
+        showsVerticalScrollIndicator={false}>
+        <View
+          style={[
+            styles.paper,
+            {
+              backgroundColor: palette.surface,
+              borderColor: palette.border,
+            },
+          ]}>
+          <View style={styles.dateHeader}>
+            <Text style={[styles.date, { color: palette.text }]}>
+              {prettyDate(diary.entryDate)}
             </Text>
-          )}
-        </View>
-        {diary.photos.map(p => (
-          <Image key={p.id} source={{ uri: p.uri }} style={styles.photo} />
-        ))}
-        {diary.body ? (
-          <Text style={[styles.body, { color: palette.text }]}>{diary.body}</Text>
-        ) : null}
-        {diary.aiGenerated ? (
-          <View style={styles.aiChip}>
-            <IconSymbol name="sparkles" size={12} color={palette.textMuted} />
-            <Text style={[styles.aiChipText, { color: palette.textMuted }]}>
-              AI 초안으로 작성됨
-            </Text>
+            {baby && (
+              <Text style={[styles.age, { color: palette.textMuted }]}>
+                {baby.name} · {getBabyAgeLabel(baby.birthDate, new Date(diary.entryDate))}
+              </Text>
+            )}
+            <View style={[styles.divider, { backgroundColor: palette.border }]} />
           </View>
-        ) : null}
+
+          <PhotoCollage uris={diary.photos.map(p => p.uri)} />
+
+          {diary.body ? (
+            <Text style={[styles.body, { color: palette.text }]}>
+              {diary.body}
+            </Text>
+          ) : null}
+
+          {diary.aiGenerated ? (
+            <View style={styles.aiChip}>
+              <IconSymbol name="sparkles" size={12} color={palette.textMuted} />
+              <Text style={[styles.aiChipText, { color: palette.textMuted }]}>
+                AI 초안으로 작성됨
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -129,17 +144,36 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerBtn: { fontSize: 15 },
+  paper: {
+    padding: 24,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  dateHeader: { marginBottom: 8 },
   date: { fontSize: 22, fontWeight: '700' },
-  age: { fontSize: 14, marginTop: 4 },
-  photo: { width: '100%', aspectRatio: 1, borderRadius: 12 },
-  body: { fontSize: 16, lineHeight: 26 },
+  age: { fontSize: 13, marginTop: 4 },
+  divider: {
+    height: 1,
+    marginTop: 16,
+  },
+  body: {
+    fontSize: 16,
+    lineHeight: 28,
+    marginTop: 8,
+  },
   aiChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    alignSelf: 'flex-start',
+    alignSelf: 'flex-end',
     paddingHorizontal: 8,
     paddingVertical: 4,
+    marginTop: 16,
   },
   aiChipText: { fontSize: 11 },
 });

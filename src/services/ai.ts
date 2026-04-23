@@ -14,15 +14,21 @@ type GenerateInput = {
   entryDate: string;
 };
 
-const PROMPT = (input: GenerateInput) => `너는 따뜻한 육아 일기 작가야. 아래 사진(들)을 보고, 이 아기의 하루를 1~3문장으로 정답게 묘사해줘.
+const PROMPT = (input: GenerateInput) => `너는 지금 아기의 엄마 또는 아빠가 되어 직접 육아일기를 쓰고 있어. 아래 사진(들)을 보고, 오늘 우리 아기의 하루를 2~4문장으로 정답게 적어줘.
 
-- 아기 이름: ${input.babyName}
+아기 정보:
+- 이름: ${input.babyName}
 - 나이: ${input.babyAgeLabel}
 - 날짜: ${input.entryDate}
-- 말투: 부드럽고 따뜻한 존댓말, 너무 길지 않게
-- 이모지는 1개 이하만 자연스럽게
-- 아기가 실제로 사진에서 보이는 행동만 묘사. 추측하지 말 것
-- 한국어로 작성`;
+
+작성 규칙:
+- 1인칭 부모 시점으로 "우리 ${input.babyName}이/가...", "오늘은...", "너무 예뻤어" 처럼 자연스럽게
+- 반말 또는 편안한 경어체 (너무 딱딱한 존댓말 X, "~했다" 또는 "~했어요" 자연스럽게)
+- 사랑스럽고 다정한 톤, 살짝 감탄이나 감정 넣어도 OK ("어찌나 귀여운지", "손이 야무져", "엄마/아빠는 녹았어" 등)
+- 아기가 사진 속에서 실제로 하는 행동·표정·옷차림만 묘사. 사실에 없는 건 추측하지 말 것
+- 이모지는 최대 1개까지만 자연스럽게
+- 한국어로 작성
+- 인삿말이나 설명 없이 바로 일기 본문만`;
 
 export async function generateDiaryFromPhotos(
   input: GenerateInput
