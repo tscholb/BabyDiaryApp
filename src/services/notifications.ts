@@ -34,10 +34,10 @@ export function isNotificationsAvailable(): boolean {
 export async function ensureNotificationPermission(): Promise<boolean> {
   const N = await getNotifications();
   if (!N) return false;
-  const { status } = await N.getPermissionsAsync();
-  if (status === 'granted') return true;
-  const req = await N.requestPermissionsAsync();
-  return req.status === 'granted';
+  const current = (await N.getPermissionsAsync()) as { status: string; granted?: boolean };
+  if (current.status === 'granted' || current.granted) return true;
+  const req = (await N.requestPermissionsAsync()) as { status: string; granted?: boolean };
+  return req.status === 'granted' || Boolean(req.granted);
 }
 
 export async function ensureAndroidChannel() {
