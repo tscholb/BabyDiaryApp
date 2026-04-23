@@ -10,12 +10,15 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.tscholb.babydiaryapp",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "아기 사진을 일기에 추가하기 위해 사진첩 접근 권한이 필요합니다.",
         "NSCameraUsageDescription": "아기 사진을 촬영하기 위해 카메라 접근 권한이 필요합니다."
       }
     },
     "android": {
+      "package": "com.tscholb.babydiaryapp",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#FFF5F0",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
