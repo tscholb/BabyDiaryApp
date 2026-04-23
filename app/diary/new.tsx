@@ -33,13 +33,13 @@ const MAX_PHOTOS = 8;
 
 export default function DiaryEditorScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const { id, date } = useLocalSearchParams<{ id?: string; date?: string }>();
   const editingId = id ? Number(id) : null;
   const scheme = useColorScheme() ?? 'light';
   const palette = Colors[scheme];
 
   const [baby, setBaby] = useState<Baby | null>(null);
-  const [entryDate, setEntryDate] = useState(todayISO());
+  const [entryDate, setEntryDate] = useState(date ?? todayISO());
   const [body, setBody] = useState('');
   const [photoUris, setPhotoUris] = useState<string[]>([]);
   const [originalPhotoUris, setOriginalPhotoUris] = useState<string[]>([]);
