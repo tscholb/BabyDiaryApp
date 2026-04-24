@@ -18,6 +18,7 @@ type PhotoRow = {
   uri: string;
   order_index: number;
   session_index: number;
+  captured_at: string | null;
   created_at: string;
 };
 
@@ -38,6 +39,7 @@ const mapPhoto = (row: PhotoRow): Photo => ({
   uri: row.uri,
   orderIndex: row.order_index,
   sessionIndex: row.session_index ?? 0,
+  capturedAt: row.captured_at ?? null,
   createdAt: row.created_at,
 });
 
@@ -93,6 +95,7 @@ export async function createDiary(input: {
   mood?: string | null;
   aiGenerated?: boolean;
   photoSessions: string[][];
+  capturedAtByUri?: Record<string, string | null>;
 }): Promise<DiaryWithPhotos> {
   const db = await getDatabase();
   let diaryId = 0;
@@ -112,9 +115,11 @@ export async function createDiary(input: {
     for (let s = 0; s < input.photoSessions.length; s++) {
       const session = input.photoSessions[s];
       for (let i = 0; i < session.length; i++) {
+        const uri = session[i];
+        const capturedAt = input.capturedAtByUri?.[uri] ?? null;
         await db.runAsync(
-          'INSERT INTO photos (diary_id, uri, order_index, session_index) VALUES (?, ?, ?, ?)',
-          [diaryId, session[i], i, s]
+          'INSERT INTO photos (diary_id, uri, order_index, session_index, captured_at) VALUES (?, ?, ?, ?, ?)',
+          [diaryId, uri, i, s, capturedAt]
         );
       }
     }
@@ -132,6 +137,7 @@ export async function updateDiary(
     mood?: string | null;
     entryDate?: string;
     photoSessions?: string[][];
+    capturedAtByUri?: Record<string, string | null>;
   }
 ): Promise<void> {
   const db = await getDatabase();
@@ -164,9 +170,11 @@ export async function updateDiary(
       for (let s = 0; s < patch.photoSessions.length; s++) {
         const session = patch.photoSessions[s];
         for (let i = 0; i < session.length; i++) {
+          const uri = session[i];
+          const capturedAt = patch.capturedAtByUri?.[uri] ?? null;
           await db.runAsync(
-            'INSERT INTO photos (diary_id, uri, order_index, session_index) VALUES (?, ?, ?, ?)',
-            [id, session[i], i, s]
+            'INSERT INTO photos (diary_id, uri, order_index, session_index, captured_at) VALUES (?, ?, ?, ?, ?)',
+            [id, uri, i, s, capturedAt]
           );
         }
       }

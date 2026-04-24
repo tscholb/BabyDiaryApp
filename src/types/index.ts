@@ -23,6 +23,7 @@ export type Photo = {
   uri: string;
   orderIndex: number;
   sessionIndex: number;
+  capturedAt: string | null;
   createdAt: string;
 };
 

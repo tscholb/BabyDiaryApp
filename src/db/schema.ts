@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const MIGRATIONS: Record<number, string> = {
   1: `
@@ -45,5 +45,8 @@ export const MIGRATIONS: Record<number, string> = {
 
     CREATE INDEX IF NOT EXISTS idx_photos_diary_session
       ON photos(diary_id, session_index, order_index);
+  `,
+  3: `
+    ALTER TABLE photos ADD COLUMN captured_at TEXT;
   `,
 };

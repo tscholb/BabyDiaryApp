@@ -7,7 +7,7 @@ import { resetDatabase } from '../db/database';
 import { createDiary, listDiaries } from '../db/diaries';
 import { groupPhotosBySession } from '../utils/sessions';
 
-const BACKUP_VERSION = 2;
+const BACKUP_VERSION = 3;
 
 type BackupManifest = {
   version: number;
@@ -24,8 +24,10 @@ type BackupManifest = {
       createdAt: string;
       // v1 kept a flat list here
       photoFiles?: string[];
-      // v2 groups files by session, preserving the diary structure
+      // v2+ groups files by session, preserving the diary structure
       sessions?: string[][];
+      // v3+ per-file EXIF capture time, keyed by zip filename
+      capturedAt?: Record<string, string | null>;
     }>;
   }>;
 };
@@ -72,6 +74,7 @@ export async function exportBackup(): Promise<BackupResult> {
 
       for (const diary of diaries) {
         const uriToFilename = new Map<string, string>();
+        const capturedAt: Record<string, string | null> = {};
         for (const photo of diary.photos) {
           const info = await FileSystem.getInfoAsync(photo.uri);
           if (!info.exists) continue;
@@ -81,6 +84,7 @@ export async function exportBackup(): Promise<BackupResult> {
           const fname = photoFilename(photo.uri);
           photosDir.file(fname, base64, { base64: true });
           uriToFilename.set(photo.uri, fname);
+          capturedAt[fname] = photo.capturedAt;
           photoCount++;
         }
         const sessionUris = groupPhotosBySession(diary.photos);
@@ -94,6 +98,7 @@ export async function exportBackup(): Promise<BackupResult> {
           aiGenerated: diary.aiGenerated === 1,
           createdAt: diary.createdAt,
           sessions,
+          capturedAt,
         });
         diaryCount++;
       }
@@ -202,6 +207,7 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
           ? [diaryEntry.photoFiles]
           : [[]];
 
+        const capturedAtByUri: Record<string, string | null> = {};
         const restoredSessions: string[][] = [];
         for (const session of sessionsInput) {
           const restoredSession: string[] = [];
@@ -209,6 +215,8 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
             const restored = await copyPhotoFromZip(zip, `photos/${zipFile}`);
             if (restored) {
               restoredSession.push(restored);
+              capturedAtByUri[restored] =
+                diaryEntry.capturedAt?.[zipFile] ?? null;
               photoCount++;
             }
           }
@@ -222,6 +230,7 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
           mood: diaryEntry.mood,
           aiGenerated: diaryEntry.aiGenerated,
           photoSessions: restoredSessions.length > 0 ? restoredSessions : [[]],
+          capturedAtByUri,
         });
         diaryCount++;
       }

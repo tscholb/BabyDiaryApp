@@ -9,12 +9,47 @@ export type AiResult =
 
 type GenerateInput = {
   photoSessions: string[][];
+  capturedAtByUri?: Record<string, string | null>;
   babyName: string;
   babyAgeLabel: string;
   entryDate: string;
   customStyle?: string;
   customRequest?: string;
 };
+
+function formatKoreanTimeRange(
+  session: string[],
+  capturedAtByUri: Record<string, string | null> | undefined
+): string | null {
+  if (!capturedAtByUri) return null;
+  const times = session
+    .map(uri => capturedAtByUri[uri])
+    .filter((t): t is string => Boolean(t))
+    .map(t => {
+      const m = t.match(/T(\d{2}):(\d{2})/);
+      if (!m) return null;
+      return { h: Number(m[1]), m: Number(m[2]), raw: t };
+    })
+    .filter((t): t is { h: number; m: number; raw: string } => t !== null)
+    .sort((a, b) => a.raw.localeCompare(b.raw));
+
+  if (times.length === 0) return null;
+
+  const fmt = (h: number, m: number) => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    if (h === 0) return `오전 12:${pad(m)}`;
+    if (h < 12) return `오전 ${h}:${pad(m)}`;
+    if (h === 12) return `오후 12:${pad(m)}`;
+    return `오후 ${h - 12}:${pad(m)}`;
+  };
+
+  const first = times[0];
+  const last = times[times.length - 1];
+  if (times.length === 1 || (first.h === last.h && first.m === last.m)) {
+    return fmt(first.h, first.m);
+  }
+  return `${fmt(first.h, first.m)} ~ ${fmt(last.h, last.m)}`;
+}
 
 const PROMPT = (input: GenerateInput) => {
   const styleBlock = input.customStyle?.trim()
@@ -24,10 +59,26 @@ const PROMPT = (input: GenerateInput) => {
     ? `\n이번 일기에만 적용할 요청:\n${input.customRequest.trim()}\n(이 요청을 가장 우선으로 반영해서 써줘.)\n`
     : '';
 
-  const nonEmptySessionCount = input.photoSessions.filter(s => s.length > 0).length;
+  const nonEmptySessions = input.photoSessions.filter(s => s.length > 0);
+  const nonEmptySessionCount = nonEmptySessions.length;
+
+  const sessionTimeLines = nonEmptySessions
+    .map((session, i) => {
+      const range = formatKoreanTimeRange(session, input.capturedAtByUri);
+      return range ? `- [세션 ${i + 1}]: ${range}에 찍힘` : null;
+    })
+    .filter((x): x is string => Boolean(x));
+
+  const timeHintBlock =
+    sessionTimeLines.length > 0
+      ? `\n각 세션의 실제 촬영 시각 (사진 EXIF 기반, 참고용):
+${sessionTimeLines.join('\n')}
+이 시각을 바탕으로 자연스러운 시간 표현을 써줘 (예: 실제로 아침 7시면 "이른 아침에", 오후 3시면 "오후에", 저녁 8시면 "저녁에"). 사용자가 넘긴 세션 순서와 실제 시각이 모순되면 실제 시각을 우선해서 자연스럽게 써줘.\n`
+      : '';
+
   const sessionBlock =
     nonEmptySessionCount > 1
-      ? `\n사용자가 오늘 하루를 ${nonEmptySessionCount}개 세션으로 나눠 사진을 넣었어. 세션은 시간 순서로 정렬돼 있어.
+      ? `\n사용자가 오늘 하루를 ${nonEmptySessionCount}개 세션으로 나눠 사진을 넣었어. 세션은 기본적으로 시간 순서라고 가정해.
 각 세션 앞에는 "[세션 N]" 구분자가 있고 그 뒤 사진들이 이어져. 세션 사이에는 시간이 흘렀다고 봐.
 한 편의 글로 자연스럽게 이어쓰되, 시간 흐름이 느껴지도록 "아침에는... 이후에는... 마지막으로는..." 같은 전환을 자연스럽게 넣어줘. 세션을 번호로 부르지 말고 자연스러운 시간 표현으로 대체.\n`
       : '';
@@ -43,7 +94,7 @@ const PROMPT = (input: GenerateInput) => {
 - 이름: ${input.babyName}
 - 나이: ${input.babyAgeLabel}
 - 날짜: ${input.entryDate}
-${sessionBlock}${styleBlock}${requestBlock}
+${sessionBlock}${timeHintBlock}${styleBlock}${requestBlock}
 작성 규칙:
 - 이름은 반드시 **성(姓)을 빼고 이름 부분만** 부를 것. 예: '김서현' → '서현이', '이지훈' → '지훈이'. 받침이 있으면 '이'를, 없으면 '가' 또는 그대로 붙여 자연스럽게 호명
 - 1인칭 부모 시점으로 "우리 서현이가...", "오늘은...", "너무 예뻤어" 처럼 자연스럽게
@@ -89,6 +140,7 @@ export async function generateDiaryFromPhotos(
   const resolvedInput: GenerateInput = {
     ...input,
     customStyle: input.customStyle ?? settings.customStyle ?? '',
+    capturedAtByUri: input.capturedAtByUri,
   };
 
   try {

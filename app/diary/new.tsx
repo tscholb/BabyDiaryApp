@@ -27,7 +27,7 @@ import { deletePhoto, persistPhoto } from '@/src/services/photoStorage';
 import type { Baby } from '@/src/types';
 import { getActiveBabyId } from '@/src/utils/activeBaby';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
-import { parseExifDate, prettyDate, todayISO } from '@/src/utils/date';
+import { parseExifDate, parseExifDateTime, prettyDate, todayISO } from '@/src/utils/date';
 import { safeBack } from '@/src/utils/navigation';
 import { groupPhotosBySession } from '@/src/utils/sessions';
 
@@ -46,6 +46,9 @@ export default function DiaryEditorScreen() {
   const [body, setBody] = useState('');
   const [sessions, setSessions] = useState<string[][]>([[]]);
   const [originalSessions, setOriginalSessions] = useState<string[][]>([[]]);
+  const [capturedAtByUri, setCapturedAtByUri] = useState<
+    Record<string, string | null>
+  >({});
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
@@ -78,6 +81,12 @@ export default function DiaryEditorScreen() {
           const initial = grouped.length > 0 ? grouped : [[]];
           setSessions(initial.map(s => [...s]));
           setOriginalSessions(initial.map(s => [...s]));
+
+          const existingCapturedAt: Record<string, string | null> = {};
+          for (const p of diary.photos) {
+            existingCapturedAt[p.uri] = p.capturedAt;
+          }
+          setCapturedAtByUri(existingCapturedAt);
         }
       }
     })();
@@ -117,12 +126,26 @@ export default function DiaryEditorScreen() {
     });
     if (result.canceled) return;
     try {
-      const stored = await Promise.all(
-        result.assets.map(a => persistPhoto(a.uri))
+      const storedWithExif = await Promise.all(
+        result.assets.map(async a => ({
+          uri: await persistPhoto(a.uri),
+          capturedAt: parseExifDateTime(
+            a.exif as Record<string, unknown> | null
+          ),
+        }))
       );
       setSessions(prev =>
-        prev.map((s, i) => (i === sIdx ? [...s, ...stored] : s))
+        prev.map((s, i) =>
+          i === sIdx ? [...s, ...storedWithExif.map(x => x.uri)] : s
+        )
       );
+      setCapturedAtByUri(prev => {
+        const next = { ...prev };
+        for (const { uri, capturedAt } of storedWithExif) {
+          next[uri] = capturedAt;
+        }
+        return next;
+      });
       maybeApplyExifDate(result.assets);
     } catch (e) {
       Alert.alert('사진 저장 실패', e instanceof Error ? e.message : String(e));
@@ -142,8 +165,13 @@ export default function DiaryEditorScreen() {
     const result = await ImagePicker.launchCameraAsync({ quality: 1, exif: true });
     if (result.canceled) return;
     try {
-      const stored = await persistPhoto(result.assets[0].uri);
+      const asset = result.assets[0];
+      const stored = await persistPhoto(asset.uri);
+      const capturedAt =
+        parseExifDateTime(asset.exif as Record<string, unknown> | null) ??
+        new Date().toISOString();
       addPhotoToSession(sIdx, stored);
+      setCapturedAtByUri(prev => ({ ...prev, [stored]: capturedAt }));
       maybeApplyExifDate(result.assets);
     } catch (e) {
       Alert.alert('사진 저장 실패', e instanceof Error ? e.message : String(e));
@@ -215,6 +243,7 @@ export default function DiaryEditorScreen() {
     try {
       const result = await generateDiaryFromPhotos({
         photoSessions: sessions,
+        capturedAtByUri,
         babyName: baby.name,
         babyAgeLabel: ageLabel,
         entryDate,
@@ -245,6 +274,7 @@ export default function DiaryEditorScreen() {
           body: body.trim(),
           entryDate,
           photoSessions: cleanedSessions,
+          capturedAtByUri,
         });
         const originalUris = originalSessions.flat();
         const currentUris = allPhotos;
@@ -256,6 +286,7 @@ export default function DiaryEditorScreen() {
           entryDate,
           body: body.trim(),
           photoSessions: cleanedSessions,
+          capturedAtByUri,
           aiGenerated: aiUsed,
         });
       }
