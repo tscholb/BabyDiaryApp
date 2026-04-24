@@ -39,6 +39,24 @@ import { groupPhotosBySession } from '@/src/utils/sessions';
 const MAX_PHOTOS_PER_SESSION = 6;
 const MAX_SESSIONS = 5;
 
+function formatModelName(id: string): string {
+  if (id.startsWith('gemini-')) {
+    return id
+      .replace('gemini-', 'Gemini ')
+      .replace('-flash-lite', ' Flash Lite')
+      .replace('-flash', ' Flash')
+      .replace('-pro', ' Pro');
+  }
+  if (id.startsWith('claude-')) {
+    if (id.includes('opus')) return 'Claude Opus';
+    if (id.includes('sonnet')) return 'Claude Sonnet';
+    if (id.includes('haiku')) return 'Claude Haiku';
+    return 'Claude';
+  }
+  if (id.startsWith('gpt-')) return 'GPT ' + id.replace('gpt-', '');
+  return id;
+}
+
 export default function DiaryEditorScreen() {
   const router = useRouter();
   const { id, date } = useLocalSearchParams<{ id?: string; date?: string }>();
@@ -57,6 +75,7 @@ export default function DiaryEditorScreen() {
   const [saving, setSaving] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiUsed, setAiUsed] = useState(false);
+  const [aiModel, setAiModel] = useState<string | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const [dateAutoSet, setDateAutoSet] = useState(false);
   const [userTouchedDate, setUserTouchedDate] = useState(
@@ -297,6 +316,7 @@ export default function DiaryEditorScreen() {
       if (result.ok) {
         setBody(result.text);
         setAiUsed(true);
+        setAiModel(result.model);
       } else {
         setBanner(result.message);
       }
@@ -521,6 +541,12 @@ export default function DiaryEditorScreen() {
                     : 'AI 초안 생성'}
                 </Text>
               </Pressable>
+
+              {aiModel && (
+                <Text style={[styles.aiModelHint, { color: palette.textMuted }]}>
+                  ✨ {formatModelName(aiModel)}로 작성됨
+                </Text>
+              )}
             </View>
           )}
 
@@ -809,6 +835,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   aiBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  aiModelHint: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 2,
+  },
   requestToggle: {
     alignSelf: 'flex-start',
     paddingVertical: 4,

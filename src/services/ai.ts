@@ -4,7 +4,7 @@ import { getApiKey, getAiSettings, updateAiSettings } from './aiSettings';
 import { scheduleRateLimitResetNotification } from './notifications';
 
 export type AiResult =
-  | { ok: true; text: string }
+  | { ok: true; text: string; model: string }
   | { ok: false; reason: 'disabled' | 'no_key' | 'invalid_key' | 'rate_limited' | 'network' | 'unknown'; message: string };
 
 type GenerateInput = {
@@ -196,8 +196,8 @@ async function readErrorBody(res: Response): Promise<string> {
 
 const GEMINI_MODELS = [
   'gemini-3.0-flash',
-  'gemini-3.0-flash-lite',
   'gemini-2.5-flash',
+  'gemini-3.0-flash-lite',
   'gemini-2.5-flash-lite',
 ];
 
@@ -291,7 +291,7 @@ async function callGemini(key: string, input: GenerateInput): Promise<AiResult> 
         return { ok: false, reason: 'unknown', message: 'AI 응답이 비어있어요.' };
       }
       await updateAiSettings({ keyStatus: 'ok', rateLimitResetAt: null });
-      return { ok: true, text: text.trim() };
+      return { ok: true, text: text.trim(), model };
     }
 
     if (res.status === 503 || res.status === 500 || res.status === 404) {
@@ -316,6 +316,8 @@ type ClaudeContent =
       type: 'image';
       source: { type: 'base64'; media_type: 'image/jpeg'; data: string };
     };
+
+const CLAUDE_MODEL = 'claude-haiku-4-5-20251001';
 
 async function callClaude(key: string, input: GenerateInput): Promise<AiResult> {
   const content: ClaudeContent[] = [{ type: 'text', text: PROMPT(input) }];
@@ -345,7 +347,7 @@ async function callClaude(key: string, input: GenerateInput): Promise<AiResult> 
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
+      model: CLAUDE_MODEL,
       max_tokens: 600,
       messages: [
         {
@@ -390,8 +392,10 @@ async function callClaude(key: string, input: GenerateInput): Promise<AiResult> 
   }
 
   await updateAiSettings({ keyStatus: 'ok', rateLimitResetAt: null });
-  return { ok: true, text: text.trim() };
+  return { ok: true, text: text.trim(), model: CLAUDE_MODEL };
 }
+
+const OPENAI_MODEL = 'gpt-4o-mini';
 
 type OpenAiContent =
   | { type: 'text'; text: string }
@@ -422,7 +426,7 @@ async function callOpenAI(key: string, input: GenerateInput): Promise<AiResult> 
       Authorization: `Bearer ${key}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini',
+      model: OPENAI_MODEL,
       max_tokens: 600,
       messages: [
         {
@@ -467,5 +471,5 @@ async function callOpenAI(key: string, input: GenerateInput): Promise<AiResult> 
   }
 
   await updateAiSettings({ keyStatus: 'ok', rateLimitResetAt: null });
-  return { ok: true, text: text.trim() };
+  return { ok: true, text: text.trim(), model: OPENAI_MODEL };
 }
