@@ -10,6 +10,7 @@ const DEFAULT: AiSettings = {
   provider: 'gemini',
   keyStatus: 'unknown',
   rateLimitResetAt: null,
+  customStyle: '',
 };
 
 export async function getAiSettings(): Promise<AiSettings> {

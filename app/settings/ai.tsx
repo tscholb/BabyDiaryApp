@@ -33,6 +33,7 @@ export default function AiSettingsScreen() {
   const [settings, setSettings] = useState<AiSettings | null>(null);
   const [keyInput, setKeyInput] = useState('');
   const [currentKeyPresent, setCurrentKeyPresent] = useState(false);
+  const [styleInput, setStyleInput] = useState('');
 
   const reload = useCallback(async () => {
     const s = await getAiSettings();
@@ -40,6 +41,7 @@ export default function AiSettingsScreen() {
     const k = await getApiKey(s.provider);
     setCurrentKeyPresent(!!k);
     setKeyInput('');
+    setStyleInput(s.customStyle ?? '');
   }, []);
 
   useFocusEffect(
@@ -67,6 +69,12 @@ export default function AiSettingsScreen() {
     await updateAiSettings({ keyStatus: 'unknown', rateLimitResetAt: null });
     Alert.alert('저장되었어요');
     reload();
+  };
+
+  const saveStyle = async () => {
+    const next = await updateAiSettings({ customStyle: styleInput.trim() });
+    setSettings(next);
+    Alert.alert('저장되었어요');
   };
 
   return (
@@ -128,6 +136,36 @@ export default function AiSettingsScreen() {
           </Pressable>
         </View>
 
+        <View style={{ gap: 8 }}>
+          <Text style={[styles.label, { color: palette.textMuted }]}>
+            말투 / 스타일 (선택)
+          </Text>
+          <Text style={[styles.rowSub, { color: palette.textMuted }]}>
+            AI가 일기 초안을 쓸 때 참고할 스타일을 자유롭게 적어주세요. 예: &quot;INFJ
+            느낌으로 감성적이게&quot;, &quot;짧고 담백하게&quot;, &quot;구어체로 친근하게&quot;
+          </Text>
+          <TextInput
+            value={styleInput}
+            onChangeText={setStyleInput}
+            placeholder="예: 감성적이고 시적인 느낌으로 써줘"
+            placeholderTextColor={palette.textMuted}
+            multiline
+            style={[
+              styles.styleInput,
+              {
+                backgroundColor: palette.surface,
+                color: palette.text,
+                borderColor: palette.border,
+              },
+            ]}
+          />
+          <Pressable
+            onPress={saveStyle}
+            style={[styles.primaryBtn, { backgroundColor: palette.tint }]}>
+            <Text style={styles.primaryBtnText}>스타일 저장</Text>
+          </Pressable>
+        </View>
+
         <View style={[styles.card, { backgroundColor: palette.surfaceAlt, borderColor: palette.border }]}>
           <Text style={[styles.rowLabel, { color: palette.text }]}>상태</Text>
           <Text style={[styles.rowSub, { color: palette.textMuted }]}>
@@ -168,6 +206,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     fontSize: 14,
+  },
+  styleInput: {
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    fontSize: 14,
+    minHeight: 90,
+    textAlignVertical: 'top',
   },
   primaryBtn: {
     marginTop: 8,

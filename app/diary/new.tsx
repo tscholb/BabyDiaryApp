@@ -53,6 +53,8 @@ export default function DiaryEditorScreen() {
   const [userTouchedDate, setUserTouchedDate] = useState(
     Boolean(date) || Boolean(id)
   );
+  const [customRequest, setCustomRequest] = useState('');
+  const [requestOpen, setRequestOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -166,6 +168,7 @@ export default function DiaryEditorScreen() {
         babyName: baby.name,
         babyAgeLabel: ageLabel,
         entryDate,
+        customRequest: customRequest.trim() || undefined,
       });
       if (result.ok) {
         setBody(result.text);
@@ -325,30 +328,63 @@ export default function DiaryEditorScreen() {
           </View>
 
           {aiEnabled && (
-            <Pressable
-              onPress={generateAiDraft}
-              disabled={generating || photoUris.length === 0}
-              style={[
-                styles.aiBtn,
-                {
-                  backgroundColor:
-                    photoUris.length === 0 ? palette.surfaceAlt : palette.tint,
-                  opacity: generating ? 0.7 : 1,
-                },
-              ]}>
-              {generating ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <IconSymbol name="sparkles" size={18} color="#fff" />
+            <View style={{ gap: 8 }}>
+              <Pressable
+                onPress={() => setRequestOpen(v => !v)}
+                style={styles.requestToggle}>
+                <Text
+                  style={[styles.requestToggleText, { color: palette.tint }]}>
+                  {requestOpen
+                    ? '− 요청사항 닫기'
+                    : customRequest.trim()
+                    ? `+ 요청사항 (${customRequest.trim().length}자)`
+                    : '+ 이번 일기에만 적용할 요청사항 추가'}
+                </Text>
+              </Pressable>
+
+              {requestOpen && (
+                <TextInput
+                  value={customRequest}
+                  onChangeText={setCustomRequest}
+                  placeholder="예: 오늘은 짧고 담백하게, 감탄사 없이"
+                  placeholderTextColor={palette.textMuted}
+                  multiline
+                  style={[
+                    styles.requestInput,
+                    {
+                      backgroundColor: palette.surface,
+                      color: palette.text,
+                      borderColor: palette.border,
+                    },
+                  ]}
+                />
               )}
-              <Text style={styles.aiBtnText}>
-                {generating
-                  ? 'AI가 작성 중...'
-                  : body
-                  ? 'AI 초안 다시 생성'
-                  : 'AI 초안 생성'}
-              </Text>
-            </Pressable>
+
+              <Pressable
+                onPress={generateAiDraft}
+                disabled={generating || photoUris.length === 0}
+                style={[
+                  styles.aiBtn,
+                  {
+                    backgroundColor:
+                      photoUris.length === 0 ? palette.surfaceAlt : palette.tint,
+                    opacity: generating ? 0.7 : 1,
+                  },
+                ]}>
+                {generating ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <IconSymbol name="sparkles" size={18} color="#fff" />
+                )}
+                <Text style={styles.aiBtnText}>
+                  {generating
+                    ? 'AI가 작성 중...'
+                    : body
+                    ? 'AI 초안 다시 생성'
+                    : 'AI 초안 생성'}
+                </Text>
+              </Pressable>
+            </View>
           )}
 
           <TextInput
@@ -451,6 +487,19 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   aiBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  requestToggle: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+  },
+  requestToggleText: { fontSize: 13, fontWeight: '600' },
+  requestInput: {
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    fontSize: 14,
+    minHeight: 72,
+    textAlignVertical: 'top',
+  },
   bodyInput: {
     minHeight: 200,
     padding: 14,

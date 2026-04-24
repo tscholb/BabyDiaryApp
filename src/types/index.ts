@@ -36,4 +36,5 @@ export type AiSettings = {
   provider: AiProvider;
   keyStatus: 'ok' | 'invalid' | 'rate_limited' | 'unknown';
   rateLimitResetAt: string | null;
+  customStyle: string;
 };

@@ -12,24 +12,35 @@ type GenerateInput = {
   babyName: string;
   babyAgeLabel: string;
   entryDate: string;
+  customStyle?: string;
+  customRequest?: string;
 };
 
-const PROMPT = (input: GenerateInput) => `너는 지금 아기의 엄마 또는 아빠가 되어 직접 육아일기를 쓰고 있어. 아래 사진(들)을 보고, 오늘 우리 아기의 하루를 2~4문장으로 정답게 적어줘.
+const PROMPT = (input: GenerateInput) => {
+  const styleBlock = input.customStyle?.trim()
+    ? `\n사용자가 설정한 기본 말투/스타일:\n${input.customStyle.trim()}\n(위 스타일을 우선 반영해서 써줘. 아래 규칙과 충돌하면 사용자 스타일이 우선이야.)\n`
+    : '';
+  const requestBlock = input.customRequest?.trim()
+    ? `\n이번 일기에만 적용할 요청:\n${input.customRequest.trim()}\n(이 요청을 가장 우선으로 반영해서 써줘.)\n`
+    : '';
+
+  return `너는 지금 아기의 엄마 또는 아빠가 되어 직접 육아일기를 쓰고 있어. 아래 사진(들)을 보고, 오늘 우리 아기의 하루를 2~4문장으로 정답게 적어줘.
 
 아기 정보:
 - 이름: ${input.babyName}
 - 나이: ${input.babyAgeLabel}
 - 날짜: ${input.entryDate}
-
+${styleBlock}${requestBlock}
 작성 규칙:
 - 이름은 반드시 **성(姓)을 빼고 이름 부분만** 부를 것. 예: '김서현' → '서현이', '이지훈' → '지훈이'. 받침이 있으면 '이'를, 없으면 '가' 또는 그대로 붙여 자연스럽게 호명
 - 1인칭 부모 시점으로 "우리 서현이가...", "오늘은...", "너무 예뻤어" 처럼 자연스럽게
-- 반말 또는 편안한 경어체 (너무 딱딱한 존댓말 X, "~했다" 또는 "~했어요" 자연스럽게)
-- 사랑스럽고 다정한 톤, 살짝 감탄이나 감정 넣어도 OK ("어찌나 귀여운지", "손이 야무져", "엄마/아빠는 녹았어" 등)
+- 기본적으로 반말 또는 편안한 경어체 (너무 딱딱한 존댓말 X), 단 위에 스타일/요청이 있으면 그걸 우선
+- 사랑스럽고 다정한 톤, 살짝 감탄이나 감정 넣어도 OK
 - 아기가 사진 속에서 실제로 하는 행동·표정·옷차림만 묘사. 사실에 없는 건 추측하지 말 것
 - 이모지는 최대 1개까지만 자연스럽게
 - 한국어로 작성
 - 인삿말이나 설명 없이 바로 일기 본문만`;
+};
 
 export async function generateDiaryFromPhotos(
   input: GenerateInput
@@ -44,14 +55,19 @@ export async function generateDiaryFromPhotos(
     return { ok: false, reason: 'no_key', message: 'API 키가 설정되지 않았어요.' };
   }
 
+  const resolvedInput: GenerateInput = {
+    ...input,
+    customStyle: input.customStyle ?? settings.customStyle ?? '',
+  };
+
   try {
     switch (settings.provider) {
       case 'gemini':
-        return await callGemini(key, input);
+        return await callGemini(key, resolvedInput);
       case 'claude':
-        return await callClaude(key, input);
+        return await callClaude(key, resolvedInput);
       case 'openai':
-        return await callOpenAI(key, input);
+        return await callOpenAI(key, resolvedInput);
     }
   } catch (e) {
     return {
