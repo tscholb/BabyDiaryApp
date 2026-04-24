@@ -5,6 +5,7 @@ import * as Sharing from 'expo-sharing';
 import type { Baby, DiaryWithPhotos } from '../types';
 import { getBabyAgeLabel } from '../utils/babyAge';
 import { prettyDate } from '../utils/date';
+import { groupPhotosBySession } from '../utils/sessions';
 
 function escapeHtml(s: string): string {
   return s
@@ -31,12 +32,29 @@ type ExportInput = {
 async function buildHtml(input: ExportInput): Promise<string> {
   const sections = await Promise.all(
     input.diaries.map(async diary => {
-      const photos = await Promise.all(
-        diary.photos.map(async p => {
-          const src = await photoToDataUri(p.uri);
-          return `<img src="${src}" />`;
+      const sessionUris = groupPhotosBySession(diary.photos).filter(
+        s => s.length > 0
+      );
+      const renderedSessions = await Promise.all(
+        sessionUris.map(async uris => {
+          const imgs = await Promise.all(
+            uris.map(async uri => {
+              const src = await photoToDataUri(uri);
+              return `<img src="${src}" />`;
+            })
+          );
+          return `<div class="photos">${imgs.join('')}</div>`;
         })
       );
+      const photosBlock =
+        sessionUris.length > 1
+          ? renderedSessions
+              .map(
+                s =>
+                  `<div class="session-group">${s}</div>`
+              )
+              .join('<div class="session-divider"></div>')
+          : renderedSessions.join('');
       const age = getBabyAgeLabel(input.baby.birthDate, new Date(diary.entryDate));
       return `
         <section class="entry">
@@ -44,7 +62,7 @@ async function buildHtml(input: ExportInput): Promise<string> {
             <h2>${prettyDate(diary.entryDate)}</h2>
             <span class="age">${escapeHtml(age)}</span>
           </header>
-          <div class="photos">${photos.join('')}</div>
+          ${photosBlock}
           ${diary.body ? `<p>${escapeHtml(diary.body)}</p>` : ''}
         </section>
       `;
@@ -68,6 +86,8 @@ async function buildHtml(input: ExportInput): Promise<string> {
   .entry .age { color: #8A8589; font-size: 12px; }
   .photos { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
   .photos img { width: 48%; border-radius: 6px; object-fit: cover; max-height: 260px; }
+  .session-divider { height: 1px; background: #F0E3DB; width: 40%; margin: 12px auto; }
+  .session-group { margin-bottom: 8px; }
   p { font-size: 14px; line-height: 1.7; white-space: pre-wrap; margin: 0; }
 </style>
 </head>

@@ -22,6 +22,7 @@ export type Photo = {
   diaryId: number;
   uri: string;
   orderIndex: number;
+  sessionIndex: number;
   createdAt: string;
 };
 

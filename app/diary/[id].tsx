@@ -21,6 +21,7 @@ import type { Baby, DiaryWithPhotos } from '@/src/types';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { prettyDate } from '@/src/utils/date';
 import { safeBack } from '@/src/utils/navigation';
+import { groupPhotosBySession } from '@/src/utils/sessions';
 
 export default function DiaryDetailScreen() {
   const router = useRouter();
@@ -111,7 +112,32 @@ export default function DiaryDetailScreen() {
             <View style={[styles.divider, { backgroundColor: palette.border }]} />
           </View>
 
-          <PhotoCollage uris={diary.photos.map(p => p.uri)} />
+          {(() => {
+            const sessions = groupPhotosBySession(diary.photos).filter(
+              s => s.length > 0
+            );
+            if (sessions.length === 0) return null;
+            if (sessions.length === 1) {
+              return <PhotoCollage uris={sessions[0]} />;
+            }
+            return (
+              <View style={{ gap: 8 }}>
+                {sessions.map((uris, i) => (
+                  <View key={i}>
+                    {i > 0 && (
+                      <View
+                        style={[
+                          styles.sessionDivider,
+                          { backgroundColor: palette.border },
+                        ]}
+                      />
+                    )}
+                    <PhotoCollage uris={uris} />
+                  </View>
+                ))}
+              </View>
+            );
+          })()}
 
           {diary.body ? (
             <Text style={[styles.body, { color: palette.text }]}>
@@ -160,6 +186,12 @@ const styles = StyleSheet.create({
   divider: {
     height: 1,
     marginTop: 16,
+  },
+  sessionDivider: {
+    height: StyleSheet.hairlineWidth,
+    alignSelf: 'center',
+    width: '50%',
+    marginVertical: 8,
   },
   body: {
     fontSize: 16,

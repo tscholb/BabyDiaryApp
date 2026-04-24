@@ -8,7 +8,7 @@ export type AiResult =
   | { ok: false; reason: 'disabled' | 'no_key' | 'invalid_key' | 'rate_limited' | 'network' | 'unknown'; message: string };
 
 type GenerateInput = {
-  photoUris: string[];
+  photoSessions: string[][];
   babyName: string;
   babyAgeLabel: string;
   entryDate: string;
@@ -24,13 +24,26 @@ const PROMPT = (input: GenerateInput) => {
     ? `\n이번 일기에만 적용할 요청:\n${input.customRequest.trim()}\n(이 요청을 가장 우선으로 반영해서 써줘.)\n`
     : '';
 
-  return `너는 지금 아기의 엄마 또는 아빠가 되어 직접 육아일기를 쓰고 있어. 아래 사진(들)을 보고, 오늘 우리 아기의 하루를 2~4문장으로 정답게 적어줘.
+  const nonEmptySessionCount = input.photoSessions.filter(s => s.length > 0).length;
+  const sessionBlock =
+    nonEmptySessionCount > 1
+      ? `\n사용자가 오늘 하루를 ${nonEmptySessionCount}개 세션으로 나눠 사진을 넣었어. 세션은 시간 순서로 정렬돼 있어.
+각 세션 앞에는 "[세션 N]" 구분자가 있고 그 뒤 사진들이 이어져. 세션 사이에는 시간이 흘렀다고 봐.
+한 편의 글로 자연스럽게 이어쓰되, 시간 흐름이 느껴지도록 "아침에는... 이후에는... 마지막으로는..." 같은 전환을 자연스럽게 넣어줘. 세션을 번호로 부르지 말고 자연스러운 시간 표현으로 대체.\n`
+      : '';
+
+  const lengthGuide =
+    nonEmptySessionCount > 1
+      ? `${nonEmptySessionCount}개 세션이 이어지는 하루를 3~5문장 정도로`
+      : '2~4문장으로';
+
+  return `너는 지금 아기의 엄마 또는 아빠가 되어 직접 육아일기를 쓰고 있어. 아래 사진(들)을 보고, 오늘 우리 아기의 하루를 ${lengthGuide} 정답게 적어줘.
 
 아기 정보:
 - 이름: ${input.babyName}
 - 나이: ${input.babyAgeLabel}
 - 날짜: ${input.entryDate}
-${styleBlock}${requestBlock}
+${sessionBlock}${styleBlock}${requestBlock}
 작성 규칙:
 - 이름은 반드시 **성(姓)을 빼고 이름 부분만** 부를 것. 예: '김서현' → '서현이', '이지훈' → '지훈이'. 받침이 있으면 '이'를, 없으면 '가' 또는 그대로 붙여 자연스럽게 호명
 - 1인칭 부모 시점으로 "우리 서현이가...", "오늘은...", "너무 예뻤어" 처럼 자연스럽게
@@ -41,6 +54,24 @@ ${styleBlock}${requestBlock}
 - 한국어로 작성
 - 인삿말이나 설명 없이 바로 일기 본문만`;
 };
+
+const MAX_PHOTOS_PER_CALL = 8;
+
+function flattenSessions(sessions: string[][]): { uris: string[]; markers: number[] } {
+  const uris: string[] = [];
+  const markers: number[] = [];
+  let budget = MAX_PHOTOS_PER_CALL;
+  for (let i = 0; i < sessions.length; i++) {
+    if (sessions[i].length === 0) continue;
+    markers.push(uris.length);
+    for (const uri of sessions[i]) {
+      if (budget <= 0) break;
+      uris.push(uri);
+      budget--;
+    }
+  }
+  return { uris, markers };
+}
 
 export async function generateDiaryFromPhotos(
   input: GenerateInput
@@ -132,14 +163,29 @@ async function tryGeminiModel(
   );
 }
 
+async function buildGeminiParts(input: GenerateInput) {
+  const parts: Array<
+    { text: string } | { inlineData: { mimeType: string; data: string } }
+  > = [{ text: PROMPT(input) }];
+  const { uris, markers } = flattenSessions(input.photoSessions);
+  const nonEmpty = input.photoSessions.filter(s => s.length > 0).length;
+  let sessionCounter = 0;
+  for (let i = 0; i < uris.length; i++) {
+    if (markers.includes(i) && nonEmpty > 1) {
+      sessionCounter++;
+      parts.push({ text: `\n[세션 ${sessionCounter}]` });
+    }
+    parts.push({
+      inlineData: { mimeType: 'image/jpeg', data: await photoToBase64(uris[i]) },
+    });
+  }
+  return parts;
+}
+
 async function callGemini(key: string, input: GenerateInput): Promise<AiResult> {
-  const images = await Promise.all(
-    input.photoUris.slice(0, 4).map(async uri => ({
-      inlineData: { mimeType: 'image/jpeg', data: await photoToBase64(uri) },
-    }))
-  );
+  const parts = await buildGeminiParts(input);
   const body = JSON.stringify({
-    contents: [{ parts: [{ text: PROMPT(input) }, ...images] }],
+    contents: [{ parts }],
   });
 
   let lastRes: Response | null = null;
@@ -207,17 +253,32 @@ async function callGemini(key: string, input: GenerateInput): Promise<AiResult> 
   };
 }
 
+type ClaudeContent =
+  | { type: 'text'; text: string }
+  | {
+      type: 'image';
+      source: { type: 'base64'; media_type: 'image/jpeg'; data: string };
+    };
+
 async function callClaude(key: string, input: GenerateInput): Promise<AiResult> {
-  const images = await Promise.all(
-    input.photoUris.slice(0, 4).map(async uri => ({
-      type: 'image' as const,
+  const content: ClaudeContent[] = [{ type: 'text', text: PROMPT(input) }];
+  const { uris, markers } = flattenSessions(input.photoSessions);
+  const nonEmpty = input.photoSessions.filter(s => s.length > 0).length;
+  let sessionCounter = 0;
+  for (let i = 0; i < uris.length; i++) {
+    if (markers.includes(i) && nonEmpty > 1) {
+      sessionCounter++;
+      content.push({ type: 'text', text: `\n[세션 ${sessionCounter}]` });
+    }
+    content.push({
+      type: 'image',
       source: {
-        type: 'base64' as const,
-        media_type: 'image/jpeg' as const,
-        data: await photoToBase64(uri),
+        type: 'base64',
+        media_type: 'image/jpeg',
+        data: await photoToBase64(uris[i]),
       },
-    }))
-  );
+    });
+  }
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -228,11 +289,11 @@ async function callClaude(key: string, input: GenerateInput): Promise<AiResult> 
     },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 400,
+      max_tokens: 600,
       messages: [
         {
           role: 'user',
-          content: [...images, { type: 'text', text: PROMPT(input) }],
+          content,
         },
       ],
     }),
@@ -275,13 +336,27 @@ async function callClaude(key: string, input: GenerateInput): Promise<AiResult> 
   return { ok: true, text: text.trim() };
 }
 
+type OpenAiContent =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
 async function callOpenAI(key: string, input: GenerateInput): Promise<AiResult> {
-  const images = await Promise.all(
-    input.photoUris.slice(0, 4).map(async uri => ({
-      type: 'image_url' as const,
-      image_url: { url: `data:image/jpeg;base64,${await photoToBase64(uri)}` },
-    }))
-  );
+  const content: OpenAiContent[] = [{ type: 'text', text: PROMPT(input) }];
+  const { uris, markers } = flattenSessions(input.photoSessions);
+  const nonEmpty = input.photoSessions.filter(s => s.length > 0).length;
+  let sessionCounter = 0;
+  for (let i = 0; i < uris.length; i++) {
+    if (markers.includes(i) && nonEmpty > 1) {
+      sessionCounter++;
+      content.push({ type: 'text', text: `\n[세션 ${sessionCounter}]` });
+    }
+    content.push({
+      type: 'image_url',
+      image_url: {
+        url: `data:image/jpeg;base64,${await photoToBase64(uris[i])}`,
+      },
+    });
+  }
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -291,11 +366,11 @@ async function callOpenAI(key: string, input: GenerateInput): Promise<AiResult> 
     },
     body: JSON.stringify({
       model: 'gpt-4o-mini',
-      max_tokens: 400,
+      max_tokens: 600,
       messages: [
         {
           role: 'user',
-          content: [{ type: 'text', text: PROMPT(input) }, ...images],
+          content,
         },
       ],
     }),

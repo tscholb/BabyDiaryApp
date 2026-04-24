@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const MIGRATIONS: Record<number, string> = {
   1: `
@@ -39,5 +39,11 @@ export const MIGRATIONS: Record<number, string> = {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+  `,
+  2: `
+    ALTER TABLE photos ADD COLUMN session_index INTEGER NOT NULL DEFAULT 0;
+
+    CREATE INDEX IF NOT EXISTS idx_photos_diary_session
+      ON photos(diary_id, session_index, order_index);
   `,
 };

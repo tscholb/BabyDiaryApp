@@ -5,8 +5,9 @@ import JSZip from 'jszip';
 import { createBaby, listBabies } from '../db/babies';
 import { resetDatabase } from '../db/database';
 import { createDiary, listDiaries } from '../db/diaries';
+import { groupPhotosBySession } from '../utils/sessions';
 
-const BACKUP_VERSION = 1;
+const BACKUP_VERSION = 2;
 
 type BackupManifest = {
   version: number;
@@ -21,7 +22,10 @@ type BackupManifest = {
       mood: string | null;
       aiGenerated: boolean;
       createdAt: string;
-      photoFiles: string[];
+      // v1 kept a flat list here
+      photoFiles?: string[];
+      // v2 groups files by session, preserving the diary structure
+      sessions?: string[][];
     }>;
   }>;
 };
@@ -67,7 +71,7 @@ export async function exportBackup(): Promise<BackupResult> {
       };
 
       for (const diary of diaries) {
-        const photoFiles: string[] = [];
+        const uriToFilename = new Map<string, string>();
         for (const photo of diary.photos) {
           const info = await FileSystem.getInfoAsync(photo.uri);
           if (!info.exists) continue;
@@ -76,16 +80,20 @@ export async function exportBackup(): Promise<BackupResult> {
           });
           const fname = photoFilename(photo.uri);
           photosDir.file(fname, base64, { base64: true });
-          photoFiles.push(fname);
+          uriToFilename.set(photo.uri, fname);
           photoCount++;
         }
+        const sessionUris = groupPhotosBySession(diary.photos);
+        const sessions = sessionUris.map(uris =>
+          uris.map(u => uriToFilename.get(u)).filter((x): x is string => Boolean(x))
+        );
         babyEntry.diaries.push({
           entryDate: diary.entryDate,
           body: diary.body,
           mood: diary.mood,
           aiGenerated: diary.aiGenerated === 1,
           createdAt: diary.createdAt,
-          photoFiles,
+          sessions,
         });
         diaryCount++;
       }
@@ -168,7 +176,7 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
     const manifest: BackupManifest = JSON.parse(
       await manifestFile.async('string')
     );
-    if (manifest.version !== BACKUP_VERSION) {
+    if (manifest.version > BACKUP_VERSION) {
       return {
         ok: false,
         message: `지원하지 않는 백업 버전입니다 (v${manifest.version})`,
@@ -188,21 +196,32 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
       });
 
       for (const diaryEntry of babyEntry.diaries) {
-        const restoredUris: string[] = [];
-        for (const zipFile of diaryEntry.photoFiles) {
-          const restored = await copyPhotoFromZip(zip, `photos/${zipFile}`);
-          if (restored) {
-            restoredUris.push(restored);
-            photoCount++;
+        const sessionsInput: string[][] = diaryEntry.sessions
+          ? diaryEntry.sessions
+          : diaryEntry.photoFiles
+          ? [diaryEntry.photoFiles]
+          : [[]];
+
+        const restoredSessions: string[][] = [];
+        for (const session of sessionsInput) {
+          const restoredSession: string[] = [];
+          for (const zipFile of session) {
+            const restored = await copyPhotoFromZip(zip, `photos/${zipFile}`);
+            if (restored) {
+              restoredSession.push(restored);
+              photoCount++;
+            }
           }
+          restoredSessions.push(restoredSession);
         }
+
         await createDiary({
           babyId: baby.id,
           entryDate: diaryEntry.entryDate,
           body: diaryEntry.body,
           mood: diaryEntry.mood,
           aiGenerated: diaryEntry.aiGenerated,
-          photoUris: restoredUris,
+          photoSessions: restoredSessions.length > 0 ? restoredSessions : [[]],
         });
         diaryCount++;
       }

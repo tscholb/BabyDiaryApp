@@ -17,6 +17,7 @@ type PhotoRow = {
   diary_id: number;
   uri: string;
   order_index: number;
+  session_index: number;
   created_at: string;
 };
 
@@ -36,8 +37,11 @@ const mapPhoto = (row: PhotoRow): Photo => ({
   diaryId: row.diary_id,
   uri: row.uri,
   orderIndex: row.order_index,
+  sessionIndex: row.session_index ?? 0,
   createdAt: row.created_at,
 });
+
+const PHOTO_ORDER = 'session_index ASC, order_index ASC';
 
 export async function listDiaries(babyId: number): Promise<DiaryWithPhotos[]> {
   const db = await getDatabase();
@@ -50,7 +54,7 @@ export async function listDiaries(babyId: number): Promise<DiaryWithPhotos[]> {
   const ids = diaryRows.map(d => d.id);
   const placeholders = ids.map(() => '?').join(',');
   const photoRows = await db.getAllAsync<PhotoRow>(
-    `SELECT * FROM photos WHERE diary_id IN (${placeholders}) ORDER BY diary_id, order_index`,
+    `SELECT * FROM photos WHERE diary_id IN (${placeholders}) ORDER BY diary_id, ${PHOTO_ORDER}`,
     ids
   );
 
@@ -76,7 +80,7 @@ export async function getDiary(id: number): Promise<DiaryWithPhotos | null> {
   );
   if (!diaryRow) return null;
   const photoRows = await db.getAllAsync<PhotoRow>(
-    'SELECT * FROM photos WHERE diary_id = ? ORDER BY order_index',
+    `SELECT * FROM photos WHERE diary_id = ? ORDER BY ${PHOTO_ORDER}`,
     [id]
   );
   return { ...mapDiary(diaryRow), photos: photoRows.map(mapPhoto) };
@@ -88,7 +92,7 @@ export async function createDiary(input: {
   body: string;
   mood?: string | null;
   aiGenerated?: boolean;
-  photoUris: string[];
+  photoSessions: string[][];
 }): Promise<DiaryWithPhotos> {
   const db = await getDatabase();
   let diaryId = 0;
@@ -105,11 +109,14 @@ export async function createDiary(input: {
     );
     diaryId = result.lastInsertRowId;
 
-    for (let i = 0; i < input.photoUris.length; i++) {
-      await db.runAsync(
-        'INSERT INTO photos (diary_id, uri, order_index) VALUES (?, ?, ?)',
-        [diaryId, input.photoUris[i], i]
-      );
+    for (let s = 0; s < input.photoSessions.length; s++) {
+      const session = input.photoSessions[s];
+      for (let i = 0; i < session.length; i++) {
+        await db.runAsync(
+          'INSERT INTO photos (diary_id, uri, order_index, session_index) VALUES (?, ?, ?, ?)',
+          [diaryId, session[i], i, s]
+        );
+      }
     }
   });
 
@@ -124,7 +131,7 @@ export async function updateDiary(
     body?: string;
     mood?: string | null;
     entryDate?: string;
-    photoUris?: string[];
+    photoSessions?: string[][];
   }
 ): Promise<void> {
   const db = await getDatabase();
@@ -152,13 +159,16 @@ export async function updateDiary(
       );
     }
 
-    if (patch.photoUris) {
+    if (patch.photoSessions) {
       await db.runAsync('DELETE FROM photos WHERE diary_id = ?', [id]);
-      for (let i = 0; i < patch.photoUris.length; i++) {
-        await db.runAsync(
-          'INSERT INTO photos (diary_id, uri, order_index) VALUES (?, ?, ?)',
-          [id, patch.photoUris[i], i]
-        );
+      for (let s = 0; s < patch.photoSessions.length; s++) {
+        const session = patch.photoSessions[s];
+        for (let i = 0; i < session.length; i++) {
+          await db.runAsync(
+            'INSERT INTO photos (diary_id, uri, order_index, session_index) VALUES (?, ?, ?, ?)',
+            [id, session[i], i, s]
+          );
+        }
       }
     }
   });
@@ -186,7 +196,7 @@ export async function listDiariesInRange(
   const ids = diaryRows.map(d => d.id);
   const placeholders = ids.map(() => '?').join(',');
   const photoRows = await db.getAllAsync<PhotoRow>(
-    `SELECT * FROM photos WHERE diary_id IN (${placeholders}) ORDER BY diary_id, order_index`,
+    `SELECT * FROM photos WHERE diary_id IN (${placeholders}) ORDER BY diary_id, ${PHOTO_ORDER}`,
     ids
   );
 

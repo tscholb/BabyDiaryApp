@@ -29,8 +29,10 @@ import { getActiveBabyId } from '@/src/utils/activeBaby';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { parseExifDate, prettyDate, todayISO } from '@/src/utils/date';
 import { safeBack } from '@/src/utils/navigation';
+import { groupPhotosBySession } from '@/src/utils/sessions';
 
-const MAX_PHOTOS = 8;
+const MAX_PHOTOS_PER_SESSION = 6;
+const MAX_SESSIONS = 5;
 
 export default function DiaryEditorScreen() {
   const router = useRouter();
@@ -42,8 +44,8 @@ export default function DiaryEditorScreen() {
   const [baby, setBaby] = useState<Baby | null>(null);
   const [entryDate, setEntryDate] = useState(date ?? todayISO());
   const [body, setBody] = useState('');
-  const [photoUris, setPhotoUris] = useState<string[]>([]);
-  const [originalPhotoUris, setOriginalPhotoUris] = useState<string[]>([]);
+  const [sessions, setSessions] = useState<string[][]>([[]]);
+  const [originalSessions, setOriginalSessions] = useState<string[][]>([[]]);
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
@@ -72,9 +74,10 @@ export default function DiaryEditorScreen() {
         if (diary) {
           setEntryDate(diary.entryDate);
           setBody(diary.body);
-          const uris = diary.photos.map(p => p.uri);
-          setPhotoUris(uris);
-          setOriginalPhotoUris(uris);
+          const grouped = groupPhotosBySession(diary.photos);
+          const initial = grouped.length > 0 ? grouped : [[]];
+          setSessions(initial.map(s => [...s]));
+          setOriginalSessions(initial.map(s => [...s]));
         }
       }
     })();
@@ -85,10 +88,19 @@ export default function DiaryEditorScreen() {
     return getBabyAgeLabel(baby.birthDate, new Date(entryDate));
   }, [baby, entryDate]);
 
-  const pickPhotos = async () => {
-    const remaining = MAX_PHOTOS - photoUris.length;
+  const allPhotos = useMemo(() => sessions.flat(), [sessions]);
+  const nonEmptySessionCount = sessions.filter(s => s.length > 0).length;
+
+  const addPhotoToSession = (sIdx: number, uri: string) => {
+    setSessions(prev =>
+      prev.map((s, i) => (i === sIdx ? [...s, uri] : s))
+    );
+  };
+
+  const pickPhotos = async (sIdx: number) => {
+    const remaining = MAX_PHOTOS_PER_SESSION - sessions[sIdx].length;
     if (remaining <= 0) {
-      Alert.alert(`사진은 최대 ${MAX_PHOTOS}장까지 추가할 수 있어요`);
+      Alert.alert(`한 세션에 최대 ${MAX_PHOTOS_PER_SESSION}장까지 넣을 수 있어요`);
       return;
     }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -104,12 +116,34 @@ export default function DiaryEditorScreen() {
       exif: true,
     });
     if (result.canceled) return;
-
     try {
       const stored = await Promise.all(
         result.assets.map(a => persistPhoto(a.uri))
       );
-      setPhotoUris(prev => [...prev, ...stored]);
+      setSessions(prev =>
+        prev.map((s, i) => (i === sIdx ? [...s, ...stored] : s))
+      );
+      maybeApplyExifDate(result.assets);
+    } catch (e) {
+      Alert.alert('사진 저장 실패', e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const takePhoto = async (sIdx: number) => {
+    if (sessions[sIdx].length >= MAX_PHOTOS_PER_SESSION) {
+      Alert.alert(`한 세션에 최대 ${MAX_PHOTOS_PER_SESSION}장까지 넣을 수 있어요`);
+      return;
+    }
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('카메라 접근 권한이 필요해요');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ quality: 1, exif: true });
+    if (result.canceled) return;
+    try {
+      const stored = await persistPhoto(result.assets[0].uri);
+      addPhotoToSession(sIdx, stored);
       maybeApplyExifDate(result.assets);
     } catch (e) {
       Alert.alert('사진 저장 실패', e instanceof Error ? e.message : String(e));
@@ -129,34 +163,50 @@ export default function DiaryEditorScreen() {
     setDateAutoSet(true);
   };
 
-  const takePhoto = async () => {
-    if (photoUris.length >= MAX_PHOTOS) {
-      Alert.alert(`사진은 최대 ${MAX_PHOTOS}장까지 추가할 수 있어요`);
-      return;
-    }
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('카메라 접근 권한이 필요해요');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({ quality: 1, exif: true });
-    if (result.canceled) return;
-    try {
-      const stored = await persistPhoto(result.assets[0].uri);
-      setPhotoUris(prev => [...prev, stored]);
-      maybeApplyExifDate(result.assets);
-    } catch (e) {
-      Alert.alert('사진 저장 실패', e instanceof Error ? e.message : String(e));
-    }
+  const removePhoto = (sIdx: number, uri: string) => {
+    setSessions(prev =>
+      prev.map((s, i) => (i === sIdx ? s.filter(u => u !== uri) : s))
+    );
   };
 
-  const removePhoto = (uri: string) => {
-    setPhotoUris(prev => prev.filter(u => u !== uri));
+  const addSession = () => {
+    if (sessions.length >= MAX_SESSIONS) {
+      Alert.alert(`세션은 최대 ${MAX_SESSIONS}개까지 만들 수 있어요`);
+      return;
+    }
+    setSessions(prev => [...prev, []]);
+  };
+
+  const removeSession = (sIdx: number) => {
+    if (sessions.length === 1) {
+      Alert.alert('최소 한 세션은 있어야 해요');
+      return;
+    }
+    const toRemove = sessions[sIdx];
+    Alert.alert(
+      '세션 삭제',
+      toRemove.length > 0
+        ? `이 세션의 사진 ${toRemove.length}장도 함께 지워집니다.`
+        : '이 세션을 삭제하시겠어요?',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: async () => {
+            setSessions(prev => prev.filter((_, i) => i !== sIdx));
+            if (!editingId) {
+              await Promise.all(toRemove.map(u => deletePhoto(u)));
+            }
+          },
+        },
+      ]
+    );
   };
 
   const generateAiDraft = async () => {
     if (!baby) return;
-    if (photoUris.length === 0) {
+    if (allPhotos.length === 0) {
       Alert.alert('사진을 먼저 추가해주세요');
       return;
     }
@@ -164,7 +214,7 @@ export default function DiaryEditorScreen() {
     setBanner(null);
     try {
       const result = await generateDiaryFromPhotos({
-        photoUris,
+        photoSessions: sessions,
         babyName: baby.name,
         babyAgeLabel: ageLabel,
         entryDate,
@@ -183,22 +233,29 @@ export default function DiaryEditorScreen() {
 
   const save = async () => {
     if (!baby) return;
-    if (!body.trim() && photoUris.length === 0) {
+    if (!body.trim() && allPhotos.length === 0) {
       Alert.alert('사진이나 내용 중 하나는 있어야 해요');
       return;
     }
     setSaving(true);
     try {
+      const cleanedSessions = sessions.map(s => [...s]);
       if (editingId) {
-        await updateDiary(editingId, { body: body.trim(), entryDate, photoUris });
-        const removed = originalPhotoUris.filter(u => !photoUris.includes(u));
+        await updateDiary(editingId, {
+          body: body.trim(),
+          entryDate,
+          photoSessions: cleanedSessions,
+        });
+        const originalUris = originalSessions.flat();
+        const currentUris = allPhotos;
+        const removed = originalUris.filter(u => !currentUris.includes(u));
         await Promise.all(removed.map(u => deletePhoto(u)));
       } else {
         await createDiary({
           babyId: baby.id,
           entryDate,
           body: body.trim(),
-          photoUris,
+          photoSessions: cleanedSessions,
           aiGenerated: aiUsed,
         });
       }
@@ -212,7 +269,8 @@ export default function DiaryEditorScreen() {
 
   const cancel = async () => {
     if (!editingId) {
-      const toDiscard = photoUris.filter(u => !originalPhotoUris.includes(u));
+      const originalUris = originalSessions.flat();
+      const toDiscard = allPhotos.filter(u => !originalUris.includes(u));
       await Promise.all(toDiscard.map(u => deletePhoto(u)));
     }
     safeBack();
@@ -251,19 +309,17 @@ export default function DiaryEditorScreen() {
               styles.metaCard,
               { backgroundColor: palette.surfaceAlt, borderColor: palette.border },
             ]}>
-            <View>
-              <Text style={[styles.metaDate, { color: palette.text }]}>
-                {prettyDate(entryDate)}
+            <Text style={[styles.metaDate, { color: palette.text }]}>
+              {prettyDate(entryDate)}
+            </Text>
+            <Text style={[styles.metaAge, { color: palette.textMuted }]}>
+              {baby.name} · {ageLabel}
+            </Text>
+            {dateAutoSet && (
+              <Text style={[styles.metaHint, { color: palette.tint }]}>
+                사진 촬영일로 자동 설정됐어요
               </Text>
-              <Text style={[styles.metaAge, { color: palette.textMuted }]}>
-                {baby.name} · {ageLabel}
-              </Text>
-              {dateAutoSet && (
-                <Text style={[styles.metaHint, { color: palette.tint }]}>
-                  사진 촬영일로 자동 설정됐어요
-                </Text>
-              )}
-            </View>
+            )}
           </View>
 
           {banner && (
@@ -283,49 +339,35 @@ export default function DiaryEditorScreen() {
             </View>
           )}
 
-          <View style={styles.photoGrid}>
-            {photoUris.map(uri => (
-              <View key={uri} style={styles.photoWrap}>
-                <Image source={{ uri }} style={styles.photoThumb} />
-                <Pressable
-                  onPress={() => removePhoto(uri)}
-                  style={[styles.removeBtn, { backgroundColor: palette.surface }]}
-                  hitSlop={8}>
-                  <IconSymbol name="trash" size={16} color={palette.danger} />
-                </Pressable>
-              </View>
-            ))}
-            {photoUris.length < MAX_PHOTOS && (
-              <View style={styles.addBtnRow}>
-                <Pressable
-                  onPress={pickPhotos}
-                  style={[
-                    styles.addBtn,
-                    { backgroundColor: palette.surface, borderColor: palette.border },
-                  ]}>
-                  <IconSymbol
-                    name="photo.on.rectangle"
-                    size={22}
-                    color={palette.tint}
-                  />
-                  <Text style={[styles.addBtnText, { color: palette.text }]}>
-                    사진첩
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={takePhoto}
-                  style={[
-                    styles.addBtn,
-                    { backgroundColor: palette.surface, borderColor: palette.border },
-                  ]}>
-                  <IconSymbol name="camera.fill" size={22} color={palette.tint} />
-                  <Text style={[styles.addBtnText, { color: palette.text }]}>
-                    촬영
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
+          {sessions.map((photos, sIdx) => (
+            <SessionCard
+              key={sIdx}
+              index={sIdx}
+              total={sessions.length}
+              photos={photos}
+              palette={palette}
+              onPick={() => pickPhotos(sIdx)}
+              onCapture={() => takePhoto(sIdx)}
+              onRemovePhoto={uri => removePhoto(sIdx, uri)}
+              onRemoveSession={() => removeSession(sIdx)}
+            />
+          ))}
+
+          {sessions.length < MAX_SESSIONS && (
+            <Pressable
+              onPress={addSession}
+              style={[
+                styles.addSessionBtn,
+                { borderColor: palette.border, backgroundColor: palette.surface },
+              ]}>
+              <Text style={[styles.addSessionText, { color: palette.tint }]}>
+                + 세션 추가
+              </Text>
+              <Text style={[styles.addSessionSub, { color: palette.textMuted }]}>
+                하루를 시간대별로 나눠 기록하면 AI가 흐름에 맞춰 써줘요
+              </Text>
+            </Pressable>
+          )}
 
           {aiEnabled && (
             <View style={{ gap: 8 }}>
@@ -362,12 +404,12 @@ export default function DiaryEditorScreen() {
 
               <Pressable
                 onPress={generateAiDraft}
-                disabled={generating || photoUris.length === 0}
+                disabled={generating || allPhotos.length === 0}
                 style={[
                   styles.aiBtn,
                   {
                     backgroundColor:
-                      photoUris.length === 0 ? palette.surfaceAlt : palette.tint,
+                      allPhotos.length === 0 ? palette.surfaceAlt : palette.tint,
                     opacity: generating ? 0.7 : 1,
                   },
                 ]}>
@@ -381,6 +423,8 @@ export default function DiaryEditorScreen() {
                     ? 'AI가 작성 중...'
                     : body
                     ? 'AI 초안 다시 생성'
+                    : nonEmptySessionCount > 1
+                    ? `AI 초안 생성 (${nonEmptySessionCount}개 세션)`
                     : 'AI 초안 생성'}
                 </Text>
               </Pressable>
@@ -406,6 +450,84 @@ export default function DiaryEditorScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
+  );
+}
+
+function SessionCard({
+  index,
+  total,
+  photos,
+  palette,
+  onPick,
+  onCapture,
+  onRemovePhoto,
+  onRemoveSession,
+}: {
+  index: number;
+  total: number;
+  photos: string[];
+  palette: typeof Colors.light;
+  onPick: () => void;
+  onCapture: () => void;
+  onRemovePhoto: (uri: string) => void;
+  onRemoveSession: () => void;
+}) {
+  const showSessionChrome = total > 1;
+  return (
+    <View
+      style={[
+        styles.sessionCard,
+        {
+          backgroundColor: palette.surface,
+          borderColor: palette.border,
+        },
+      ]}>
+      {showSessionChrome && (
+        <View style={styles.sessionHeader}>
+          <Text style={[styles.sessionTitle, { color: palette.text }]}>
+            세션 {index + 1}
+          </Text>
+          <Pressable onPress={onRemoveSession} hitSlop={8}>
+            <IconSymbol name="trash" size={16} color={palette.danger} />
+          </Pressable>
+        </View>
+      )}
+
+      <View style={styles.photoGrid}>
+        {photos.map(uri => (
+          <View key={uri} style={styles.photoWrap}>
+            <Image source={{ uri }} style={styles.photoThumb} />
+            <Pressable
+              onPress={() => onRemovePhoto(uri)}
+              style={[styles.removeBtn, { backgroundColor: palette.surface }]}
+              hitSlop={8}>
+              <IconSymbol name="trash" size={14} color={palette.danger} />
+            </Pressable>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.addBtnRow}>
+        <Pressable
+          onPress={onPick}
+          style={[
+            styles.addBtn,
+            { backgroundColor: palette.surfaceAlt, borderColor: palette.border },
+          ]}>
+          <IconSymbol name="photo.on.rectangle" size={20} color={palette.tint} />
+          <Text style={[styles.addBtnText, { color: palette.text }]}>사진첩</Text>
+        </Pressable>
+        <Pressable
+          onPress={onCapture}
+          style={[
+            styles.addBtn,
+            { backgroundColor: palette.surfaceAlt, borderColor: palette.border },
+          ]}>
+          <IconSymbol name="camera.fill" size={20} color={palette.tint} />
+          <Text style={[styles.addBtnText, { color: palette.text }]}>촬영</Text>
+        </Pressable>
+      </View>
+    </View>
   );
 }
 
@@ -437,6 +559,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   bannerText: { fontSize: 13, flex: 1 },
+  sessionCard: {
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+  },
+  sessionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sessionTitle: { fontSize: 14, fontWeight: '600' },
   photoGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -450,34 +584,44 @@ const styles = StyleSheet.create({
   photoThumb: {
     width: '100%',
     height: '100%',
-    borderRadius: 10,
+    borderRadius: 8,
   },
   removeBtn: {
     position: 'absolute',
     top: 4,
     right: 4,
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
   addBtnRow: {
     flexDirection: 'row',
     gap: 8,
-    width: '100%',
   },
   addBtn: {
     flex: 1,
-    height: 80,
-    borderRadius: 10,
+    height: 60,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  addBtnText: { fontSize: 13 },
+  addSessionBtn: {
+    padding: 16,
+    borderRadius: 12,
     borderWidth: 1,
     borderStyle: 'dashed',
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 4,
   },
-  addBtnText: { fontSize: 12 },
+  addSessionText: { fontSize: 14, fontWeight: '600' },
+  addSessionSub: { fontSize: 12, textAlign: 'center' },
   aiBtn: {
     flexDirection: 'row',
     alignItems: 'center',
