@@ -40,14 +40,33 @@ jobs:
         env:
           EXPO_NO_TELEMETRY: '1'
 
-      - name: Build Debug APK
+      - name: Generate signing keystore
+        working-directory: android/app
+        run: |
+          keytool -genkeypair -v -storetype PKCS12 \
+            -keystore release.keystore \
+            -alias babydiary \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=BabyDiary,O=Personal,C=KR" \
+            -storepass babydiary -keypass babydiary
+
+      - name: Wire keystore into gradle.properties
+        run: |
+          cat >> android/gradle.properties <<EOF
+          MYAPP_UPLOAD_STORE_FILE=release.keystore
+          MYAPP_UPLOAD_KEY_ALIAS=babydiary
+          MYAPP_UPLOAD_STORE_PASSWORD=babydiary
+          MYAPP_UPLOAD_KEY_PASSWORD=babydiary
+          EOF
+
+      - name: Build Release APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Rename APK
         run: |
           mkdir -p artifacts
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
+          cp android/app/build/outputs/apk/release/app-release.apk \
              artifacts/babydiary-${{ github.run_number }}.apk
 
       - name: Upload APK
