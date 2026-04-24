@@ -117,7 +117,15 @@ export default function CalendarScreen() {
               { backgroundColor: palette.surface, borderColor: palette.border },
             ]}>
             {item.photos[0] && (
-              <Image source={{ uri: item.photos[0].uri }} style={styles.thumb} />
+              <Image
+                source={{
+                  uri:
+                    item.photos[0].mediaType === 'video'
+                      ? item.photos[0].thumbnailUri ?? item.photos[0].uri
+                      : item.photos[0].uri,
+                }}
+                style={styles.thumb}
+              />
             )}
             <Text
               numberOfLines={3}

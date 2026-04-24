@@ -13,11 +13,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { PhotoCollage } from '@/src/components/PhotoCollage';
+import type { MediaItem } from '@/src/components/MediaCollage';
+import { MediaCollage } from '@/src/components/MediaCollage';
 import { getBaby } from '@/src/db/babies';
 import { deleteDiary, getDiary } from '@/src/db/diaries';
-import { deletePhoto } from '@/src/services/photoStorage';
-import type { Baby, DiaryWithPhotos } from '@/src/types';
+import { deleteMedia } from '@/src/services/photoStorage';
+import type { Baby, DiaryWithPhotos, Photo } from '@/src/types';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { prettyDate } from '@/src/utils/date';
 import { safeBack } from '@/src/utils/navigation';
@@ -53,9 +54,14 @@ export default function DiaryDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             if (!diary) return;
-            const uris = diary.photos.map(p => p.uri);
+            const items = diary.photos.map(p => ({
+              uri: p.uri,
+              thumbnailUri: p.thumbnailUri,
+            }));
             await deleteDiary(diary.id);
-            await Promise.all(uris.map(u => deletePhoto(u)));
+            await Promise.all(
+              items.map(it => deleteMedia(it.uri, it.thumbnailUri))
+            );
             safeBack();
           },
         },
@@ -113,12 +119,23 @@ export default function DiaryDetailScreen() {
           </View>
 
           {(() => {
+            const byUri = new Map<string, Photo>();
+            for (const p of diary.photos) byUri.set(p.uri, p);
+            const toItems = (uris: string[]): MediaItem[] =>
+              uris.map(u => {
+                const p = byUri.get(u);
+                return {
+                  uri: u,
+                  mediaType: p?.mediaType ?? 'photo',
+                  thumbnailUri: p?.thumbnailUri ?? null,
+                };
+              });
             const sessions = groupPhotosBySession(diary.photos).filter(
               s => s.length > 0
             );
             if (sessions.length === 0) return null;
             if (sessions.length === 1) {
-              return <PhotoCollage uris={sessions[0]} />;
+              return <MediaCollage items={toItems(sessions[0])} layout={diary.photoLayout} />;
             }
             return (
               <View style={{ gap: 8 }}>
@@ -132,7 +149,7 @@ export default function DiaryDetailScreen() {
                         ]}
                       />
                     )}
-                    <PhotoCollage uris={uris} />
+                    <MediaCollage items={toItems(uris)} layout={diary.photoLayout} />
                   </View>
                 ))}
               </View>

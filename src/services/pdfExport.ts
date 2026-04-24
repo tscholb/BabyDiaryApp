@@ -32,6 +32,8 @@ type ExportInput = {
 async function buildHtml(input: ExportInput): Promise<string> {
   const sections = await Promise.all(
     input.diaries.map(async diary => {
+      const byUri = new Map<string, (typeof diary.photos)[number]>();
+      for (const p of diary.photos) byUri.set(p.uri, p);
       const sessionUris = groupPhotosBySession(diary.photos).filter(
         s => s.length > 0
       );
@@ -39,8 +41,14 @@ async function buildHtml(input: ExportInput): Promise<string> {
         sessionUris.map(async uris => {
           const imgs = await Promise.all(
             uris.map(async uri => {
-              const src = await photoToDataUri(uri);
-              return `<img src="${src}" />`;
+              const photo = byUri.get(uri);
+              const isVideo = photo?.mediaType === 'video';
+              const renderUri =
+                isVideo && photo?.thumbnailUri ? photo.thumbnailUri : uri;
+              const src = await photoToDataUri(renderUri);
+              return isVideo
+                ? `<div class="video-cell"><img src="${src}" /><span class="play">▶</span></div>`
+                : `<img src="${src}" />`;
             })
           );
           return `<div class="photos">${imgs.join('')}</div>`;
@@ -86,6 +94,9 @@ async function buildHtml(input: ExportInput): Promise<string> {
   .entry .age { color: #8A8589; font-size: 12px; }
   .photos { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
   .photos img { width: 48%; border-radius: 6px; object-fit: cover; max-height: 260px; }
+  .video-cell { width: 48%; position: relative; }
+  .video-cell img { width: 100%; border-radius: 6px; object-fit: cover; max-height: 260px; }
+  .video-cell .play { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 40px; height: 40px; border-radius: 20px; background: rgba(0,0,0,0.55); color: #fff; font-size: 16px; display: flex; align-items: center; justify-content: center; }
   .session-divider { height: 1px; background: #F0E3DB; width: 40%; margin: 12px auto; }
   .session-group { margin-bottom: 8px; }
   p { font-size: 14px; line-height: 1.7; white-space: pre-wrap; margin: 0; }

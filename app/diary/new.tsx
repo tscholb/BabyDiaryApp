@@ -20,11 +20,16 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { getBaby } from '@/src/db/babies';
+import type { MediaMeta } from '@/src/db/diaries';
 import { createDiary, getDiary, updateDiary } from '@/src/db/diaries';
 import { generateDiaryFromPhotos } from '@/src/services/ai';
 import { getAiSettings } from '@/src/services/aiSettings';
-import { deletePhoto, persistPhoto } from '@/src/services/photoStorage';
-import type { Baby } from '@/src/types';
+import {
+  deleteMedia,
+  persistPhoto,
+  persistVideo,
+} from '@/src/services/photoStorage';
+import type { Baby, PhotoLayout } from '@/src/types';
 import { getActiveBabyId } from '@/src/utils/activeBaby';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { parseExifDate, parseExifDateTime, prettyDate, todayISO } from '@/src/utils/date';
@@ -46,9 +51,8 @@ export default function DiaryEditorScreen() {
   const [body, setBody] = useState('');
   const [sessions, setSessions] = useState<string[][]>([[]]);
   const [originalSessions, setOriginalSessions] = useState<string[][]>([[]]);
-  const [capturedAtByUri, setCapturedAtByUri] = useState<
-    Record<string, string | null>
-  >({});
+  const [mediaByUri, setMediaByUri] = useState<Record<string, MediaMeta>>({});
+  const [layout, setLayout] = useState<PhotoLayout>('polaroid');
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(false);
@@ -77,16 +81,21 @@ export default function DiaryEditorScreen() {
         if (diary) {
           setEntryDate(diary.entryDate);
           setBody(diary.body);
+          setLayout(diary.photoLayout);
           const grouped = groupPhotosBySession(diary.photos);
           const initial = grouped.length > 0 ? grouped : [[]];
           setSessions(initial.map(s => [...s]));
           setOriginalSessions(initial.map(s => [...s]));
 
-          const existingCapturedAt: Record<string, string | null> = {};
+          const existingMedia: Record<string, MediaMeta> = {};
           for (const p of diary.photos) {
-            existingCapturedAt[p.uri] = p.capturedAt;
+            existingMedia[p.uri] = {
+              capturedAt: p.capturedAt,
+              mediaType: p.mediaType,
+              thumbnailUri: p.thumbnailUri,
+            };
           }
-          setCapturedAtByUri(existingCapturedAt);
+          setMediaByUri(existingMedia);
         }
       }
     })();
@@ -106,10 +115,18 @@ export default function DiaryEditorScreen() {
     );
   };
 
-  const pickPhotos = async (sIdx: number) => {
+  const mergeMedia = (entries: Array<[string, MediaMeta]>) => {
+    setMediaByUri(prev => {
+      const next = { ...prev };
+      for (const [uri, meta] of entries) next[uri] = meta;
+      return next;
+    });
+  };
+
+  const pickMedia = async (sIdx: number) => {
     const remaining = MAX_PHOTOS_PER_SESSION - sessions[sIdx].length;
     if (remaining <= 0) {
-      Alert.alert(`한 세션에 최대 ${MAX_PHOTOS_PER_SESSION}장까지 넣을 수 있어요`);
+      Alert.alert(`한 세션에 최대 ${MAX_PHOTOS_PER_SESSION}개까지 넣을 수 있어요`);
       return;
     }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -118,7 +135,7 @@ export default function DiaryEditorScreen() {
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
       allowsMultipleSelection: true,
       selectionLimit: remaining,
       quality: 1,
@@ -126,35 +143,50 @@ export default function DiaryEditorScreen() {
     });
     if (result.canceled) return;
     try {
-      const storedWithExif = await Promise.all(
-        result.assets.map(async a => ({
-          uri: await persistPhoto(a.uri),
-          capturedAt: parseExifDateTime(
-            a.exif as Record<string, unknown> | null
-          ),
-        }))
-      );
-      setSessions(prev =>
-        prev.map((s, i) =>
-          i === sIdx ? [...s, ...storedWithExif.map(x => x.uri)] : s
-        )
-      );
-      setCapturedAtByUri(prev => {
-        const next = { ...prev };
-        for (const { uri, capturedAt } of storedWithExif) {
-          next[uri] = capturedAt;
+      const addedUris: string[] = [];
+      const metaEntries: Array<[string, MediaMeta]> = [];
+      for (const asset of result.assets) {
+        if (asset.type === 'video') {
+          const { videoUri, thumbnailUri } = await persistVideo(asset.uri);
+          addedUris.push(videoUri);
+          metaEntries.push([
+            videoUri,
+            {
+              mediaType: 'video',
+              thumbnailUri,
+              capturedAt: parseExifDateTime(
+                asset.exif as Record<string, unknown> | null
+              ),
+            },
+          ]);
+        } else {
+          const photoUri = await persistPhoto(asset.uri);
+          addedUris.push(photoUri);
+          metaEntries.push([
+            photoUri,
+            {
+              mediaType: 'photo',
+              thumbnailUri: null,
+              capturedAt: parseExifDateTime(
+                asset.exif as Record<string, unknown> | null
+              ),
+            },
+          ]);
         }
-        return next;
-      });
+      }
+      setSessions(prev =>
+        prev.map((s, i) => (i === sIdx ? [...s, ...addedUris] : s))
+      );
+      mergeMedia(metaEntries);
       maybeApplyExifDate(result.assets);
     } catch (e) {
-      Alert.alert('사진 저장 실패', e instanceof Error ? e.message : String(e));
+      Alert.alert('추가 실패', e instanceof Error ? e.message : String(e));
     }
   };
 
   const takePhoto = async (sIdx: number) => {
     if (sessions[sIdx].length >= MAX_PHOTOS_PER_SESSION) {
-      Alert.alert(`한 세션에 최대 ${MAX_PHOTOS_PER_SESSION}장까지 넣을 수 있어요`);
+      Alert.alert(`한 세션에 최대 ${MAX_PHOTOS_PER_SESSION}개까지 넣을 수 있어요`);
       return;
     }
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -171,10 +203,12 @@ export default function DiaryEditorScreen() {
         parseExifDateTime(asset.exif as Record<string, unknown> | null) ??
         new Date().toISOString();
       addPhotoToSession(sIdx, stored);
-      setCapturedAtByUri(prev => ({ ...prev, [stored]: capturedAt }));
+      mergeMedia([
+        [stored, { mediaType: 'photo', thumbnailUri: null, capturedAt }],
+      ]);
       maybeApplyExifDate(result.assets);
     } catch (e) {
-      Alert.alert('사진 저장 실패', e instanceof Error ? e.message : String(e));
+      Alert.alert('추가 실패', e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -224,7 +258,11 @@ export default function DiaryEditorScreen() {
           onPress: async () => {
             setSessions(prev => prev.filter((_, i) => i !== sIdx));
             if (!editingId) {
-              await Promise.all(toRemove.map(u => deletePhoto(u)));
+              await Promise.all(
+                toRemove.map(u =>
+                  deleteMedia(u, mediaByUri[u]?.thumbnailUri ?? null)
+                )
+              );
             }
           },
         },
@@ -241,8 +279,15 @@ export default function DiaryEditorScreen() {
     setGenerating(true);
     setBanner(null);
     try {
+      const capturedAtByUri: Record<string, string | null> = {};
+      for (const [uri, meta] of Object.entries(mediaByUri)) {
+        capturedAtByUri[uri] = meta.capturedAt ?? null;
+      }
+      const photoOnlySessions = sessions.map(session =>
+        session.filter(u => mediaByUri[u]?.mediaType !== 'video')
+      );
       const result = await generateDiaryFromPhotos({
-        photoSessions: sessions,
+        photoSessions: photoOnlySessions,
         capturedAtByUri,
         babyName: baby.name,
         babyAgeLabel: ageLabel,
@@ -273,20 +318,26 @@ export default function DiaryEditorScreen() {
         await updateDiary(editingId, {
           body: body.trim(),
           entryDate,
+          photoLayout: layout,
           photoSessions: cleanedSessions,
-          capturedAtByUri,
+          mediaByUri,
         });
         const originalUris = originalSessions.flat();
         const currentUris = allPhotos;
         const removed = originalUris.filter(u => !currentUris.includes(u));
-        await Promise.all(removed.map(u => deletePhoto(u)));
+        await Promise.all(
+          removed.map(u =>
+            deleteMedia(u, mediaByUri[u]?.thumbnailUri ?? null)
+          )
+        );
       } else {
         await createDiary({
           babyId: baby.id,
           entryDate,
           body: body.trim(),
+          photoLayout: layout,
           photoSessions: cleanedSessions,
-          capturedAtByUri,
+          mediaByUri,
           aiGenerated: aiUsed,
         });
       }
@@ -302,7 +353,11 @@ export default function DiaryEditorScreen() {
     if (!editingId) {
       const originalUris = originalSessions.flat();
       const toDiscard = allPhotos.filter(u => !originalUris.includes(u));
-      await Promise.all(toDiscard.map(u => deletePhoto(u)));
+      await Promise.all(
+        toDiscard.map(u =>
+          deleteMedia(u, mediaByUri[u]?.thumbnailUri ?? null)
+        )
+      );
     }
     safeBack();
   };
@@ -370,14 +425,21 @@ export default function DiaryEditorScreen() {
             </View>
           )}
 
+          <LayoutPicker
+            value={layout}
+            onChange={setLayout}
+            palette={palette}
+          />
+
           {sessions.map((photos, sIdx) => (
             <SessionCard
               key={sIdx}
               index={sIdx}
               total={sessions.length}
               photos={photos}
+              mediaByUri={mediaByUri}
               palette={palette}
-              onPick={() => pickPhotos(sIdx)}
+              onPick={() => pickMedia(sIdx)}
               onCapture={() => takePhoto(sIdx)}
               onRemovePhoto={uri => removePhoto(sIdx, uri)}
               onRemoveSession={() => removeSession(sIdx)}
@@ -484,10 +546,56 @@ export default function DiaryEditorScreen() {
   );
 }
 
+function LayoutPicker({
+  value,
+  onChange,
+  palette,
+}: {
+  value: PhotoLayout;
+  onChange: (l: PhotoLayout) => void;
+  palette: typeof Colors.light;
+}) {
+  const options: { id: PhotoLayout; label: string }[] = [
+    { id: 'polaroid', label: '폴라로이드' },
+    { id: 'clean', label: '깔끔하게' },
+    { id: 'grid', label: '격자' },
+  ];
+  return (
+    <View style={styles.layoutRow}>
+      <Text style={[styles.layoutLabel, { color: palette.textMuted }]}>
+        사진 레이아웃
+      </Text>
+      <View style={[styles.layoutChips, { backgroundColor: palette.surfaceAlt }]}>
+        {options.map(o => {
+          const active = o.id === value;
+          return (
+            <Pressable
+              key={o.id}
+              onPress={() => onChange(o.id)}
+              style={[
+                styles.layoutChip,
+                active && { backgroundColor: palette.tint },
+              ]}>
+              <Text
+                style={[
+                  styles.layoutChipText,
+                  { color: active ? '#fff' : palette.text },
+                ]}>
+                {o.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 function SessionCard({
   index,
   total,
   photos,
+  mediaByUri,
   palette,
   onPick,
   onCapture,
@@ -497,6 +605,7 @@ function SessionCard({
   index: number;
   total: number;
   photos: string[];
+  mediaByUri: Record<string, MediaMeta>;
   palette: typeof Colors.light;
   onPick: () => void;
   onCapture: () => void;
@@ -525,9 +634,18 @@ function SessionCard({
       )}
 
       <View style={styles.photoGrid}>
-        {photos.map(uri => (
+        {photos.map(uri => {
+          const meta = mediaByUri[uri];
+          const isVideo = meta?.mediaType === 'video';
+          const thumb = meta?.thumbnailUri ?? uri;
+          return (
           <View key={uri} style={styles.photoWrap}>
-            <Image source={{ uri }} style={styles.photoThumb} />
+            <Image source={{ uri: thumb }} style={styles.photoThumb} />
+            {isVideo && (
+              <View style={styles.videoBadge} pointerEvents="none">
+                <Text style={styles.videoBadgeText}>▶</Text>
+              </View>
+            )}
             <Pressable
               onPress={() => onRemovePhoto(uri)}
               style={[styles.removeBtn, { backgroundColor: palette.surface }]}
@@ -535,7 +653,8 @@ function SessionCard({
               <IconSymbol name="trash" size={14} color={palette.danger} />
             </Pressable>
           </View>
-        ))}
+          );
+        })}
       </View>
 
       <View style={styles.addBtnRow}>
@@ -627,6 +746,34 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  videoBadge: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -14 }, { translateY: -14 }],
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoBadgeText: { color: '#fff', fontSize: 11, marginLeft: 2 },
+  layoutRow: { gap: 8 },
+  layoutLabel: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase' },
+  layoutChips: {
+    flexDirection: 'row',
+    padding: 4,
+    borderRadius: 10,
+    gap: 4,
+  },
+  layoutChip: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  layoutChipText: { fontSize: 13, fontWeight: '500' },
   addBtnRow: {
     flexDirection: 'row',
     gap: 8,

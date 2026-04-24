@@ -6,6 +6,10 @@ export type Baby = {
   createdAt: string;
 };
 
+export type PhotoLayout = 'polaroid' | 'clean' | 'grid';
+
+export type MediaType = 'photo' | 'video';
+
 export type Diary = {
   id: number;
   babyId: number;
@@ -13,6 +17,7 @@ export type Diary = {
   body: string;
   mood: string | null;
   aiGenerated: number;
+  photoLayout: PhotoLayout;
   createdAt: string;
   updatedAt: string;
 };
@@ -24,6 +29,8 @@ export type Photo = {
   orderIndex: number;
   sessionIndex: number;
   capturedAt: string | null;
+  mediaType: MediaType;
+  thumbnailUri: string | null;
   createdAt: string;
 };
 

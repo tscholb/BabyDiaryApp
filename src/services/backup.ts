@@ -7,7 +7,7 @@ import { resetDatabase } from '../db/database';
 import { createDiary, listDiaries } from '../db/diaries';
 import { groupPhotosBySession } from '../utils/sessions';
 
-const BACKUP_VERSION = 3;
+const BACKUP_VERSION = 4;
 
 type BackupManifest = {
   version: number;
@@ -28,6 +28,10 @@ type BackupManifest = {
       sessions?: string[][];
       // v3+ per-file EXIF capture time, keyed by zip filename
       capturedAt?: Record<string, string | null>;
+      // v4+ diary-level layout + per-file media metadata
+      photoLayout?: 'polaroid' | 'clean' | 'grid';
+      mediaType?: Record<string, 'photo' | 'video'>;
+      thumbnailFor?: Record<string, string>;
     }>;
   }>;
 };
@@ -75,6 +79,9 @@ export async function exportBackup(): Promise<BackupResult> {
       for (const diary of diaries) {
         const uriToFilename = new Map<string, string>();
         const capturedAt: Record<string, string | null> = {};
+        const mediaType: Record<string, 'photo' | 'video'> = {};
+        const thumbnailFor: Record<string, string> = {};
+
         for (const photo of diary.photos) {
           const info = await FileSystem.getInfoAsync(photo.uri);
           if (!info.exists) continue;
@@ -85,7 +92,21 @@ export async function exportBackup(): Promise<BackupResult> {
           photosDir.file(fname, base64, { base64: true });
           uriToFilename.set(photo.uri, fname);
           capturedAt[fname] = photo.capturedAt;
+          mediaType[fname] = photo.mediaType;
           photoCount++;
+
+          if (photo.thumbnailUri) {
+            const thumbInfo = await FileSystem.getInfoAsync(photo.thumbnailUri);
+            if (thumbInfo.exists) {
+              const thumbBase64 = await FileSystem.readAsStringAsync(
+                photo.thumbnailUri,
+                { encoding: FileSystem.EncodingType.Base64 }
+              );
+              const thumbName = photoFilename(photo.thumbnailUri);
+              photosDir.file(thumbName, thumbBase64, { base64: true });
+              thumbnailFor[fname] = thumbName;
+            }
+          }
         }
         const sessionUris = groupPhotosBySession(diary.photos);
         const sessions = sessionUris.map(uris =>
@@ -99,6 +120,9 @@ export async function exportBackup(): Promise<BackupResult> {
           createdAt: diary.createdAt,
           sessions,
           capturedAt,
+          photoLayout: diary.photoLayout,
+          mediaType,
+          thumbnailFor,
         });
         diaryCount++;
       }
@@ -207,7 +231,10 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
           ? [diaryEntry.photoFiles]
           : [[]];
 
-        const capturedAtByUri: Record<string, string | null> = {};
+        const mediaByUri: Record<
+          string,
+          { capturedAt?: string | null; mediaType?: 'photo' | 'video'; thumbnailUri?: string | null }
+        > = {};
         const restoredSessions: string[][] = [];
         for (const session of sessionsInput) {
           const restoredSession: string[] = [];
@@ -215,8 +242,20 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
             const restored = await copyPhotoFromZip(zip, `photos/${zipFile}`);
             if (restored) {
               restoredSession.push(restored);
-              capturedAtByUri[restored] =
-                diaryEntry.capturedAt?.[zipFile] ?? null;
+              const mediaType = diaryEntry.mediaType?.[zipFile] ?? 'photo';
+              let thumbnailUri: string | null = null;
+              const thumbFile = diaryEntry.thumbnailFor?.[zipFile];
+              if (thumbFile) {
+                thumbnailUri = await copyPhotoFromZip(
+                  zip,
+                  `photos/${thumbFile}`
+                );
+              }
+              mediaByUri[restored] = {
+                capturedAt: diaryEntry.capturedAt?.[zipFile] ?? null,
+                mediaType,
+                thumbnailUri,
+              };
               photoCount++;
             }
           }
@@ -229,8 +268,9 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
           body: diaryEntry.body,
           mood: diaryEntry.mood,
           aiGenerated: diaryEntry.aiGenerated,
+          photoLayout: diaryEntry.photoLayout ?? 'polaroid',
           photoSessions: restoredSessions.length > 0 ? restoredSessions : [[]],
-          capturedAtByUri,
+          mediaByUri,
         });
         diaryCount++;
       }

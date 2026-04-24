@@ -1,4 +1,4 @@
-import type { Diary, DiaryWithPhotos, Photo } from '../types';
+import type { Diary, DiaryWithPhotos, MediaType, Photo, PhotoLayout } from '../types';
 import { getDatabase } from './database';
 
 type DiaryRow = {
@@ -8,6 +8,7 @@ type DiaryRow = {
   body: string;
   mood: string | null;
   ai_generated: number;
+  photo_layout: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -19,8 +20,19 @@ type PhotoRow = {
   order_index: number;
   session_index: number;
   captured_at: string | null;
+  media_type: string | null;
+  thumbnail_uri: string | null;
   created_at: string;
 };
+
+function normalizeLayout(value: string | null | undefined): PhotoLayout {
+  if (value === 'clean' || value === 'grid' || value === 'polaroid') return value;
+  return 'polaroid';
+}
+
+function normalizeMediaType(value: string | null | undefined): MediaType {
+  return value === 'video' ? 'video' : 'photo';
+}
 
 const mapDiary = (row: DiaryRow): Diary => ({
   id: row.id,
@@ -29,6 +41,7 @@ const mapDiary = (row: DiaryRow): Diary => ({
   body: row.body,
   mood: row.mood,
   aiGenerated: row.ai_generated,
+  photoLayout: normalizeLayout(row.photo_layout),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -40,6 +53,8 @@ const mapPhoto = (row: PhotoRow): Photo => ({
   orderIndex: row.order_index,
   sessionIndex: row.session_index ?? 0,
   capturedAt: row.captured_at ?? null,
+  mediaType: normalizeMediaType(row.media_type),
+  thumbnailUri: row.thumbnail_uri ?? null,
   createdAt: row.created_at,
 });
 
@@ -88,26 +103,35 @@ export async function getDiary(id: number): Promise<DiaryWithPhotos | null> {
   return { ...mapDiary(diaryRow), photos: photoRows.map(mapPhoto) };
 }
 
+export type MediaMeta = {
+  capturedAt?: string | null;
+  mediaType?: MediaType;
+  thumbnailUri?: string | null;
+};
+
 export async function createDiary(input: {
   babyId: number;
   entryDate: string;
   body: string;
   mood?: string | null;
   aiGenerated?: boolean;
+  photoLayout?: PhotoLayout;
   photoSessions: string[][];
   capturedAtByUri?: Record<string, string | null>;
+  mediaByUri?: Record<string, MediaMeta>;
 }): Promise<DiaryWithPhotos> {
   const db = await getDatabase();
   let diaryId = 0;
   await db.withTransactionAsync(async () => {
     const result = await db.runAsync(
-      'INSERT INTO diaries (baby_id, entry_date, body, mood, ai_generated) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO diaries (baby_id, entry_date, body, mood, ai_generated, photo_layout) VALUES (?, ?, ?, ?, ?, ?)',
       [
         input.babyId,
         input.entryDate,
         input.body,
         input.mood ?? null,
         input.aiGenerated ? 1 : 0,
+        input.photoLayout ?? 'polaroid',
       ]
     );
     diaryId = result.lastInsertRowId;
@@ -116,10 +140,15 @@ export async function createDiary(input: {
       const session = input.photoSessions[s];
       for (let i = 0; i < session.length; i++) {
         const uri = session[i];
-        const capturedAt = input.capturedAtByUri?.[uri] ?? null;
+        const capturedAt =
+          input.mediaByUri?.[uri]?.capturedAt ??
+          input.capturedAtByUri?.[uri] ??
+          null;
+        const mediaType = input.mediaByUri?.[uri]?.mediaType ?? 'photo';
+        const thumbnailUri = input.mediaByUri?.[uri]?.thumbnailUri ?? null;
         await db.runAsync(
-          'INSERT INTO photos (diary_id, uri, order_index, session_index, captured_at) VALUES (?, ?, ?, ?, ?)',
-          [diaryId, uri, i, s, capturedAt]
+          'INSERT INTO photos (diary_id, uri, order_index, session_index, captured_at, media_type, thumbnail_uri) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [diaryId, uri, i, s, capturedAt, mediaType, thumbnailUri]
         );
       }
     }
@@ -136,8 +165,10 @@ export async function updateDiary(
     body?: string;
     mood?: string | null;
     entryDate?: string;
+    photoLayout?: PhotoLayout;
     photoSessions?: string[][];
     capturedAtByUri?: Record<string, string | null>;
+    mediaByUri?: Record<string, MediaMeta>;
   }
 ): Promise<void> {
   const db = await getDatabase();
@@ -156,6 +187,10 @@ export async function updateDiary(
       fields.push('entry_date = ?');
       values.push(patch.entryDate);
     }
+    if (patch.photoLayout !== undefined) {
+      fields.push('photo_layout = ?');
+      values.push(patch.photoLayout);
+    }
     if (fields.length > 0) {
       fields.push(`updated_at = datetime('now')`);
       values.push(id);
@@ -171,10 +206,15 @@ export async function updateDiary(
         const session = patch.photoSessions[s];
         for (let i = 0; i < session.length; i++) {
           const uri = session[i];
-          const capturedAt = patch.capturedAtByUri?.[uri] ?? null;
+          const capturedAt =
+            patch.mediaByUri?.[uri]?.capturedAt ??
+            patch.capturedAtByUri?.[uri] ??
+            null;
+          const mediaType = patch.mediaByUri?.[uri]?.mediaType ?? 'photo';
+          const thumbnailUri = patch.mediaByUri?.[uri]?.thumbnailUri ?? null;
           await db.runAsync(
-            'INSERT INTO photos (diary_id, uri, order_index, session_index, captured_at) VALUES (?, ?, ?, ?, ?)',
-            [id, uri, i, s, capturedAt]
+            'INSERT INTO photos (diary_id, uri, order_index, session_index, captured_at, media_type, thumbnail_uri) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [id, uri, i, s, capturedAt, mediaType, thumbnailUri]
           );
         }
       }

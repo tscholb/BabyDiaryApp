@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const MIGRATIONS: Record<number, string> = {
   1: `
@@ -48,5 +48,10 @@ export const MIGRATIONS: Record<number, string> = {
   `,
   3: `
     ALTER TABLE photos ADD COLUMN captured_at TEXT;
+  `,
+  4: `
+    ALTER TABLE diaries ADD COLUMN photo_layout TEXT NOT NULL DEFAULT 'polaroid';
+    ALTER TABLE photos ADD COLUMN media_type TEXT NOT NULL DEFAULT 'photo';
+    ALTER TABLE photos ADD COLUMN thumbnail_uri TEXT;
   `,
 };

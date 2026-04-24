@@ -149,9 +149,19 @@ export default function FeedScreen() {
             {item.photos.length > 0 && (
               <View style={styles.coverWrap}>
                 <Image
-                  source={{ uri: item.photos[0].uri }}
+                  source={{
+                    uri:
+                      item.photos[0].mediaType === 'video'
+                        ? item.photos[0].thumbnailUri ?? item.photos[0].uri
+                        : item.photos[0].uri,
+                  }}
                   style={styles.cardImage}
                 />
+                {item.photos[0].mediaType === 'video' && (
+                  <View style={styles.videoBadge}>
+                    <Text style={styles.videoBadgeText}>▶</Text>
+                  </View>
+                )}
                 {item.photos.length > 1 && (
                   <View style={styles.photoBadge}>
                     <IconSymbol
@@ -239,6 +249,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  videoBadge: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -18 }, { translateY: -18 }],
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoBadgeText: { color: '#fff', fontSize: 14, marginLeft: 2 },
   cardBody: { padding: 16, gap: 6 },
   cardMeta: {
     flexDirection: 'row',
