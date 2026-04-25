@@ -1,0 +1,32 @@
+name: OTA Update
+
+on:
+  push:
+    branches:
+      - claude/continue-app-development-PuE6a
+      - main
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Publish OTA update
+        run: |
+          MSG=$(git log -1 --pretty=%s)
+          npx eas-cli update --branch preview --message "$MSG" --non-interactive
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
