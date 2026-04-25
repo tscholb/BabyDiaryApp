@@ -1,10 +1,6 @@
 name: OTA Update
 
 on:
-  push:
-    branches:
-      - claude/continue-app-development-PuE6a
-      - main
   workflow_dispatch:
 
 jobs:

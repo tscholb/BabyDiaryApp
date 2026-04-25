@@ -3,8 +3,8 @@ name: Build Android APK
 on:
   push:
     branches:
-      - claude/continue-app-development-PuE6a
       - main
+      - 'claude/**'
   workflow_dispatch:
 
 jobs:
