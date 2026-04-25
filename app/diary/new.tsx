@@ -1,6 +1,6 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,6 +13,8 @@ import {
   Text,
   TextInput,
   View,
+  findNodeHandle,
+  UIManager,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -84,6 +86,21 @@ export default function DiaryEditorScreen() {
   );
   const [customRequest, setCustomRequest] = useState('');
   const [requestOpen, setRequestOpen] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+
+  const scrollToInput = (target: number | null) => {
+    if (target == null) return;
+    const scrollNode = findNodeHandle(scrollRef.current);
+    if (!scrollNode) return;
+    UIManager.measureLayout(
+      target,
+      scrollNode,
+      () => {},
+      (_x, y) => {
+        scrollRef.current?.scrollTo({ y: Math.max(y - 80, 0), animated: true });
+      }
+    );
+  };
 
   useEffect(() => {
     (async () => {
@@ -430,8 +447,9 @@ export default function DiaryEditorScreen() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: palette.background }} edges={['top']}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}>
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={0}>
         <View style={[styles.header, { borderBottomColor: palette.border }]}>
           <Pressable onPress={cancel} hitSlop={12}>
             <Text style={[styles.headerBtn, { color: palette.textMuted }]}>취소</Text>
@@ -451,8 +469,12 @@ export default function DiaryEditorScreen() {
         </View>
 
         <ScrollView
-          contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 80 }}
-          keyboardShouldPersistTaps="handled">
+          ref={scrollRef}
+          contentContainerStyle={{ padding: 16, gap: 16, paddingBottom: 320 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets
+          showsVerticalScrollIndicator={false}>
           <View
             style={[
               styles.metaCard,
@@ -510,6 +532,7 @@ export default function DiaryEditorScreen() {
                   return next;
                 })
               }
+              onTextFocus={scrollToInput}
               onPick={() => pickMedia(sIdx)}
               onCapture={() => takePhoto(sIdx)}
               onRemovePhoto={uri => removePhoto(sIdx, uri)}
@@ -552,6 +575,7 @@ export default function DiaryEditorScreen() {
                 <TextInput
                   value={customRequest}
                   onChangeText={setCustomRequest}
+                  onFocus={e => scrollToInput(e.target as unknown as number)}
                   placeholder="예: 오늘은 짧고 담백하게, 감탄사 없이"
                   placeholderTextColor={palette.textMuted}
                   multiline
@@ -659,6 +683,7 @@ function SessionCard({
   palette,
   text,
   onTextChange,
+  onTextFocus,
   onPick,
   onCapture,
   onRemovePhoto,
@@ -671,6 +696,7 @@ function SessionCard({
   palette: typeof Colors.light;
   text: string;
   onTextChange: (v: string) => void;
+  onTextFocus: (target: number | null) => void;
   onPick: () => void;
   onCapture: () => void;
   onRemovePhoto: (uri: string) => void;
@@ -746,6 +772,7 @@ function SessionCard({
         value={text}
         onChangeText={onTextChange}
         multiline
+        onFocus={e => onTextFocus(e.target as unknown as number)}
         placeholder={
           total > 1
             ? '이 시간대에 있었던 일을 적어보세요'
