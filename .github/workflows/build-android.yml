@@ -10,7 +10,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -50,18 +50,22 @@ jobs:
             -dname "CN=BabyDiary,O=Personal,C=KR" \
             -storepass babydiary -keypass babydiary
 
-      - name: Wire keystore into gradle.properties
+      - name: Wire keystore + bump JVM memory in gradle.properties
         run: |
           cat >> android/gradle.properties <<EOF
           MYAPP_UPLOAD_STORE_FILE=release.keystore
           MYAPP_UPLOAD_KEY_ALIAS=babydiary
           MYAPP_UPLOAD_STORE_PASSWORD=babydiary
           MYAPP_UPLOAD_KEY_PASSWORD=babydiary
+          org.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8
+          org.gradle.parallel=true
           EOF
 
       - name: Build Release APK
         working-directory: android
-        run: ./gradlew assembleRelease --no-daemon
+        env:
+          GRADLE_OPTS: '-Xmx5g -XX:MaxMetaspaceSize=2g'
+        run: ./gradlew assembleRelease --no-daemon --max-workers=2
 
       - name: Rename APK
         run: |
