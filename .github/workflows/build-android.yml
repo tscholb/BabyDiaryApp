@@ -40,23 +40,18 @@ jobs:
         env:
           EXPO_NO_TELEMETRY: '1'
 
-      - name: Generate signing keystore
-        working-directory: android/app
+      - name: Decode signing keystore
         run: |
-          keytool -genkeypair -v -storetype PKCS12 \
-            -keystore release.keystore \
-            -alias babydiary \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=BabyDiary,O=Personal,C=KR" \
-            -storepass babydiary -keypass babydiary
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
+          test -s android/app/release.keystore
 
       - name: Wire keystore + bump JVM memory in gradle.properties
         run: |
           cat >> android/gradle.properties <<EOF
           MYAPP_UPLOAD_STORE_FILE=release.keystore
-          MYAPP_UPLOAD_KEY_ALIAS=babydiary
-          MYAPP_UPLOAD_STORE_PASSWORD=babydiary
-          MYAPP_UPLOAD_KEY_PASSWORD=babydiary
+          MYAPP_UPLOAD_KEY_ALIAS=${{ secrets.ANDROID_KEY_ALIAS }}
+          MYAPP_UPLOAD_STORE_PASSWORD=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          MYAPP_UPLOAD_KEY_PASSWORD=${{ secrets.ANDROID_KEY_PASSWORD }}
           org.gradle.jvmargs=-Xmx5g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8
           org.gradle.parallel=true
           EOF
