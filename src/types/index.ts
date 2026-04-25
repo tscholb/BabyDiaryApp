@@ -18,6 +18,7 @@ export type Diary = {
   mood: string | null;
   aiGenerated: number;
   photoLayout: PhotoLayout;
+  sessionBodies: string[];
   createdAt: string;
   updatedAt: string;
 };

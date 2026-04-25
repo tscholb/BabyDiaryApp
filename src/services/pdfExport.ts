@@ -54,15 +54,38 @@ async function buildHtml(input: ExportInput): Promise<string> {
           return `<div class="photos">${imgs.join('')}</div>`;
         })
       );
-      const photosBlock =
-        sessionUris.length > 1
-          ? renderedSessions
-              .map(
-                s =>
-                  `<div class="session-group">${s}</div>`
-              )
-              .join('<div class="session-divider"></div>')
-          : renderedSessions.join('');
+
+      const sessionTexts = diary.sessionBodies.length > 0
+        ? sessionUris.map((_, i) => diary.sessionBodies[i] ?? '')
+        : [];
+      const hasInterleavedTexts = sessionTexts.some(t => t && t.trim().length > 0);
+
+      let photosBlock = '';
+      if (sessionUris.length === 1) {
+        photosBlock =
+          renderedSessions[0] +
+          (sessionTexts[0]
+            ? `<p>${escapeHtml(sessionTexts[0])}</p>`
+            : diary.body
+            ? `<p>${escapeHtml(diary.body)}</p>`
+            : '');
+      } else if (hasInterleavedTexts) {
+        photosBlock = renderedSessions
+          .map(
+            (s, i) =>
+              `<div class="session-group">${s}${
+                sessionTexts[i] ? `<p>${escapeHtml(sessionTexts[i])}</p>` : ''
+              }</div>`
+          )
+          .join('<div class="session-divider"></div>');
+      } else {
+        photosBlock =
+          renderedSessions
+            .map(s => `<div class="session-group">${s}</div>`)
+            .join('<div class="session-divider"></div>') +
+          (diary.body ? `<p>${escapeHtml(diary.body)}</p>` : '');
+      }
+
       const age = getBabyAgeLabel(input.baby.birthDate, new Date(diary.entryDate));
       return `
         <section class="entry">
@@ -71,7 +94,6 @@ async function buildHtml(input: ExportInput): Promise<string> {
             <span class="age">${escapeHtml(age)}</span>
           </header>
           ${photosBlock}
-          ${diary.body ? `<p>${escapeHtml(diary.body)}</p>` : ''}
         </section>
       `;
     })

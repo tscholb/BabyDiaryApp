@@ -9,6 +9,7 @@ type DiaryRow = {
   mood: string | null;
   ai_generated: number;
   photo_layout: string | null;
+  session_bodies: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -34,6 +35,19 @@ function normalizeMediaType(value: string | null | undefined): MediaType {
   return value === 'video' ? 'video' : 'photo';
 }
 
+function parseSessionBodies(raw: string | null): string[] {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((x): x is string => typeof x === 'string');
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
 const mapDiary = (row: DiaryRow): Diary => ({
   id: row.id,
   babyId: row.baby_id,
@@ -42,6 +56,7 @@ const mapDiary = (row: DiaryRow): Diary => ({
   mood: row.mood,
   aiGenerated: row.ai_generated,
   photoLayout: normalizeLayout(row.photo_layout),
+  sessionBodies: parseSessionBodies(row.session_bodies),
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -117,14 +132,18 @@ export async function createDiary(input: {
   aiGenerated?: boolean;
   photoLayout?: PhotoLayout;
   photoSessions: string[][];
+  sessionBodies?: string[];
   capturedAtByUri?: Record<string, string | null>;
   mediaByUri?: Record<string, MediaMeta>;
 }): Promise<DiaryWithPhotos> {
   const db = await getDatabase();
   let diaryId = 0;
+  const sessionBodiesJson = input.sessionBodies
+    ? JSON.stringify(input.sessionBodies)
+    : null;
   await db.withTransactionAsync(async () => {
     const result = await db.runAsync(
-      'INSERT INTO diaries (baby_id, entry_date, body, mood, ai_generated, photo_layout) VALUES (?, ?, ?, ?, ?, ?)',
+      'INSERT INTO diaries (baby_id, entry_date, body, mood, ai_generated, photo_layout, session_bodies) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [
         input.babyId,
         input.entryDate,
@@ -132,6 +151,7 @@ export async function createDiary(input: {
         input.mood ?? null,
         input.aiGenerated ? 1 : 0,
         input.photoLayout ?? 'polaroid',
+        sessionBodiesJson,
       ]
     );
     diaryId = result.lastInsertRowId;
@@ -167,6 +187,7 @@ export async function updateDiary(
     entryDate?: string;
     photoLayout?: PhotoLayout;
     photoSessions?: string[][];
+    sessionBodies?: string[];
     capturedAtByUri?: Record<string, string | null>;
     mediaByUri?: Record<string, MediaMeta>;
   }
@@ -190,6 +211,10 @@ export async function updateDiary(
     if (patch.photoLayout !== undefined) {
       fields.push('photo_layout = ?');
       values.push(patch.photoLayout);
+    }
+    if (patch.sessionBodies !== undefined) {
+      fields.push('session_bodies = ?');
+      values.push(JSON.stringify(patch.sessionBodies));
     }
     if (fields.length > 0) {
       fields.push(`updated_at = datetime('now')`);

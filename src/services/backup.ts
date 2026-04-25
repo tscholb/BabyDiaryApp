@@ -7,7 +7,7 @@ import { resetDatabase } from '../db/database';
 import { createDiary, listDiaries } from '../db/diaries';
 import { groupPhotosBySession } from '../utils/sessions';
 
-const BACKUP_VERSION = 4;
+const BACKUP_VERSION = 5;
 
 type BackupManifest = {
   version: number;
@@ -32,6 +32,8 @@ type BackupManifest = {
       photoLayout?: 'polaroid' | 'clean' | 'grid';
       mediaType?: Record<string, 'photo' | 'video'>;
       thumbnailFor?: Record<string, string>;
+      // v5+ per-session body text, parallel to sessions[]
+      sessionBodies?: string[];
     }>;
   }>;
 };
@@ -123,6 +125,7 @@ export async function exportBackup(): Promise<BackupResult> {
           photoLayout: diary.photoLayout,
           mediaType,
           thumbnailFor,
+          sessionBodies: diary.sessionBodies,
         });
         diaryCount++;
       }
@@ -270,6 +273,7 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
           aiGenerated: diaryEntry.aiGenerated,
           photoLayout: diaryEntry.photoLayout ?? 'polaroid',
           photoSessions: restoredSessions.length > 0 ? restoredSessions : [[]],
+          sessionBodies: diaryEntry.sessionBodies,
           mediaByUri,
         });
         diaryCount++;

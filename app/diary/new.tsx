@@ -69,6 +69,7 @@ export default function DiaryEditorScreen() {
   const [body, setBody] = useState('');
   const [sessions, setSessions] = useState<string[][]>([[]]);
   const [originalSessions, setOriginalSessions] = useState<string[][]>([[]]);
+  const [sessionTexts, setSessionTexts] = useState<string[]>(['']);
   const [mediaByUri, setMediaByUri] = useState<Record<string, MediaMeta>>({});
   const [layout, setLayout] = useState<PhotoLayout>('polaroid');
   const [generating, setGenerating] = useState(false);
@@ -105,6 +106,18 @@ export default function DiaryEditorScreen() {
           const initial = grouped.length > 0 ? grouped : [[]];
           setSessions(initial.map(s => [...s]));
           setOriginalSessions(initial.map(s => [...s]));
+
+          const initialTexts = initial.map((_, i) =>
+            diary.sessionBodies[i] ?? ''
+          );
+          if (
+            initialTexts.every(t => !t) &&
+            diary.body &&
+            initial.length === 1
+          ) {
+            initialTexts[0] = diary.body;
+          }
+          setSessionTexts(initialTexts);
 
           const existingMedia: Record<string, MediaMeta> = {};
           for (const p of diary.photos) {
@@ -256,6 +269,7 @@ export default function DiaryEditorScreen() {
       return;
     }
     setSessions(prev => [...prev, []]);
+    setSessionTexts(prev => [...prev, '']);
   };
 
   const removeSession = (sIdx: number) => {
@@ -276,6 +290,7 @@ export default function DiaryEditorScreen() {
           style: 'destructive',
           onPress: async () => {
             setSessions(prev => prev.filter((_, i) => i !== sIdx));
+            setSessionTexts(prev => prev.filter((_, i) => i !== sIdx));
             if (!editingId) {
               await Promise.all(
                 toRemove.map(u =>
@@ -317,6 +332,29 @@ export default function DiaryEditorScreen() {
         setBody(result.text);
         setAiUsed(true);
         setAiModel(result.model);
+
+        const nonEmptyIndices: number[] = [];
+        sessions.forEach((s, i) => {
+          if (s.length > 0) nonEmptyIndices.push(i);
+        });
+        if (
+          nonEmptyIndices.length > 0 &&
+          result.sessionTexts.length === nonEmptyIndices.length
+        ) {
+          setSessionTexts(prev => {
+            const next = [...prev];
+            nonEmptyIndices.forEach((sessionIdx, n) => {
+              next[sessionIdx] = result.sessionTexts[n];
+            });
+            return next;
+          });
+        } else {
+          setSessionTexts(prev => {
+            const next = [...prev];
+            if (next.length > 0) next[0] = result.text;
+            return next;
+          });
+        }
       } else {
         setBanner(result.message);
       }
@@ -327,7 +365,10 @@ export default function DiaryEditorScreen() {
 
   const save = async () => {
     if (!baby) return;
-    if (!body.trim() && allPhotos.length === 0) {
+    const trimmedSessionTexts = sessionTexts.map(t => t.trim());
+    const combinedBody =
+      trimmedSessionTexts.filter(Boolean).join('\n\n') || body.trim();
+    if (!combinedBody && allPhotos.length === 0) {
       Alert.alert('사진이나 내용 중 하나는 있어야 해요');
       return;
     }
@@ -336,10 +377,11 @@ export default function DiaryEditorScreen() {
       const cleanedSessions = sessions.map(s => [...s]);
       if (editingId) {
         await updateDiary(editingId, {
-          body: body.trim(),
+          body: combinedBody,
           entryDate,
           photoLayout: layout,
           photoSessions: cleanedSessions,
+          sessionBodies: trimmedSessionTexts,
           mediaByUri,
         });
         const originalUris = originalSessions.flat();
@@ -354,9 +396,10 @@ export default function DiaryEditorScreen() {
         await createDiary({
           babyId: baby.id,
           entryDate,
-          body: body.trim(),
+          body: combinedBody,
           photoLayout: layout,
           photoSessions: cleanedSessions,
+          sessionBodies: trimmedSessionTexts,
           mediaByUri,
           aiGenerated: aiUsed,
         });
@@ -459,6 +502,14 @@ export default function DiaryEditorScreen() {
               photos={photos}
               mediaByUri={mediaByUri}
               palette={palette}
+              text={sessionTexts[sIdx] ?? ''}
+              onTextChange={value =>
+                setSessionTexts(prev => {
+                  const next = [...prev];
+                  next[sIdx] = value;
+                  return next;
+                })
+              }
               onPick={() => pickMedia(sIdx)}
               onCapture={() => takePhoto(sIdx)}
               onRemovePhoto={uri => removePhoto(sIdx, uri)}
@@ -534,7 +585,7 @@ export default function DiaryEditorScreen() {
                 <Text style={styles.aiBtnText}>
                   {generating
                     ? 'AI가 작성 중...'
-                    : body
+                    : sessionTexts.some(t => t.trim())
                     ? 'AI 초안 다시 생성'
                     : nonEmptySessionCount > 1
                     ? `AI 초안 생성 (${nonEmptySessionCount}개 세션)`
@@ -549,23 +600,6 @@ export default function DiaryEditorScreen() {
               )}
             </View>
           )}
-
-          <TextInput
-            value={body}
-            onChangeText={setBody}
-            multiline
-            placeholder="오늘 아기의 모습을 기록해보세요..."
-            placeholderTextColor={palette.textMuted}
-            style={[
-              styles.bodyInput,
-              {
-                backgroundColor: palette.surface,
-                color: palette.text,
-                borderColor: palette.border,
-              },
-            ]}
-            textAlignVertical="top"
-          />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -623,6 +657,8 @@ function SessionCard({
   photos,
   mediaByUri,
   palette,
+  text,
+  onTextChange,
   onPick,
   onCapture,
   onRemovePhoto,
@@ -633,6 +669,8 @@ function SessionCard({
   photos: string[];
   mediaByUri: Record<string, MediaMeta>;
   palette: typeof Colors.light;
+  text: string;
+  onTextChange: (v: string) => void;
   onPick: () => void;
   onCapture: () => void;
   onRemovePhoto: (uri: string) => void;
@@ -703,6 +741,27 @@ function SessionCard({
           <Text style={[styles.addBtnText, { color: palette.text }]}>촬영</Text>
         </Pressable>
       </View>
+
+      <TextInput
+        value={text}
+        onChangeText={onTextChange}
+        multiline
+        placeholder={
+          total > 1
+            ? '이 시간대에 있었던 일을 적어보세요'
+            : '오늘 아기의 모습을 기록해보세요'
+        }
+        placeholderTextColor={palette.textMuted}
+        style={[
+          styles.sessionBodyInput,
+          {
+            backgroundColor: palette.surfaceAlt,
+            color: palette.text,
+            borderColor: palette.border,
+          },
+        ]}
+        textAlignVertical="top"
+      />
     </View>
   );
 }
@@ -860,5 +919,14 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     fontSize: 15,
     lineHeight: 22,
+  },
+  sessionBodyInput: {
+    marginTop: 4,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    fontSize: 14,
+    lineHeight: 21,
+    minHeight: 80,
   },
 });
