@@ -2,12 +2,14 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import JSZip from 'jszip';
 
+import { createAnniversary, listAnniversaries } from '../db/anniversaries';
 import { createBaby, listBabies } from '../db/babies';
 import { resetDatabase } from '../db/database';
 import { createDiary, listDiaries } from '../db/diaries';
+import type { AnniversaryCategory } from '../types';
 import { groupPhotosBySession } from '../utils/sessions';
 
-const BACKUP_VERSION = 5;
+const BACKUP_VERSION = 6;
 
 type BackupManifest = {
   version: number;
@@ -34,6 +36,18 @@ type BackupManifest = {
       thumbnailFor?: Record<string, string>;
       // v5+ per-session body text, parallel to sessions[]
       sessionBodies?: string[];
+      // v6+ diary index inside the baby (so anniversaries can link)
+      indexInBaby?: number;
+    }>;
+    // v6+ anniversaries with optional diaryIndex link
+    anniversaries?: Array<{
+      name: string;
+      icon: string;
+      category: AnniversaryCategory | null;
+      date: string;
+      diaryIndex: number | null;
+      notes: string | null;
+      createdAt: string;
     }>;
   }>;
 };
@@ -71,11 +85,26 @@ export async function exportBackup(): Promise<BackupResult> {
 
     for (const baby of babies) {
       const diaries = await listDiaries(baby.id);
+      const anniversaries = await listAnniversaries(baby.id);
+      const diaryIdToIndex = new Map<number, number>();
+      diaries.forEach((d, i) => diaryIdToIndex.set(d.id, i));
       const babyEntry: BackupManifest['babies'][number] = {
         name: baby.name,
         birthDate: baby.birthDate,
         profileImageUri: baby.profileImageUri,
         diaries: [],
+        anniversaries: anniversaries.map(a => ({
+          name: a.name,
+          icon: a.icon,
+          category: a.category,
+          date: a.date,
+          diaryIndex:
+            a.diaryId != null && diaryIdToIndex.has(a.diaryId)
+              ? diaryIdToIndex.get(a.diaryId)!
+              : null,
+          notes: a.notes,
+          createdAt: a.createdAt,
+        })),
       };
 
       for (const diary of diaries) {
@@ -226,6 +255,7 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
         birthDate: babyEntry.birthDate,
         profileImageUri: babyEntry.profileImageUri,
       });
+      const createdDiaryIds: number[] = [];
 
       for (const diaryEntry of babyEntry.diaries) {
         const sessionsInput: string[][] = diaryEntry.sessions
@@ -265,7 +295,7 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
           restoredSessions.push(restoredSession);
         }
 
-        await createDiary({
+        const created = await createDiary({
           babyId: baby.id,
           entryDate: diaryEntry.entryDate,
           body: diaryEntry.body,
@@ -276,7 +306,26 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
           sessionBodies: diaryEntry.sessionBodies,
           mediaByUri,
         });
+        createdDiaryIds.push(created.id);
         diaryCount++;
+      }
+
+      if (babyEntry.anniversaries) {
+        for (const a of babyEntry.anniversaries) {
+          const linkedDiaryId =
+            a.diaryIndex != null && createdDiaryIds[a.diaryIndex] != null
+              ? createdDiaryIds[a.diaryIndex]
+              : null;
+          await createAnniversary({
+            babyId: baby.id,
+            name: a.name,
+            icon: a.icon,
+            category: a.category,
+            date: a.date,
+            diaryId: linkedDiaryId,
+            notes: a.notes,
+          });
+        }
       }
     }
 

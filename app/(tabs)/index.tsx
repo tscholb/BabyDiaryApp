@@ -14,9 +14,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { listAnniversaries } from '@/src/db/anniversaries';
 import { getBaby } from '@/src/db/babies';
 import { listDiaries } from '@/src/db/diaries';
-import type { Baby, DiaryWithPhotos } from '@/src/types';
+import type { Anniversary, Baby, DiaryWithPhotos } from '@/src/types';
 import { getActiveBabyId } from '@/src/utils/activeBaby';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 
@@ -26,6 +27,10 @@ export default function FeedScreen() {
   const palette = Colors[scheme];
   const [baby, setBaby] = useState<Baby | null>(null);
   const [diaries, setDiaries] = useState<DiaryWithPhotos[]>([]);
+  const [anniversaryCount, setAnniversaryCount] = useState(0);
+  const [latestAnniversary, setLatestAnniversary] = useState<Anniversary | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
 
@@ -36,14 +41,19 @@ export default function FeedScreen() {
       if (!activeId) {
         setBaby(null);
         setDiaries([]);
+        setAnniversaryCount(0);
+        setLatestAnniversary(null);
         return;
       }
-      const [b, d] = await Promise.all([
+      const [b, d, anns] = await Promise.all([
         getBaby(activeId),
         listDiaries(activeId),
+        listAnniversaries(activeId),
       ]);
       setBaby(b);
       setDiaries(d);
+      setAnniversaryCount(anns.length);
+      setLatestAnniversary(anns[0] ?? null);
     } finally {
       setLoading(false);
     }
@@ -104,8 +114,31 @@ export default function FeedScreen() {
         </View>
       </View>
 
-      {diaries.length > 0 && (
-        <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 12, gap: 12 }}>
+        <Pressable
+          onPress={() => router.push('/anniversaries')}
+          style={[
+            styles.annLink,
+            { backgroundColor: palette.surfaceAlt, borderColor: palette.border },
+          ]}>
+          <Text style={styles.annLinkEmoji}>
+            {latestAnniversary?.icon ?? '🏆'}
+          </Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.annLinkTitle, { color: palette.text }]}>
+              기념일
+            </Text>
+            <Text
+              style={[styles.annLinkSub, { color: palette.textMuted }]}
+              numberOfLines={1}>
+              {anniversaryCount > 0
+                ? `${anniversaryCount}개 · 최근: ${latestAnniversary?.name}`
+                : '아기의 처음 순간을 기록해보세요'}
+            </Text>
+          </View>
+          <Text style={[styles.annLinkArrow, { color: palette.tint }]}>›</Text>
+        </Pressable>
+        {diaries.length > 0 && (
           <TextInput
             value={query}
             onChangeText={setQuery}
@@ -120,8 +153,8 @@ export default function FeedScreen() {
               },
             ]}
           />
-        </View>
-      )}
+        )}
+      </View>
 
       <FlatList
         data={filtered}
@@ -217,6 +250,18 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     fontSize: 14,
   },
+  annLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  annLinkEmoji: { fontSize: 24 },
+  annLinkTitle: { fontSize: 14, fontWeight: '700' },
+  annLinkSub: { fontSize: 12, marginTop: 2 },
+  annLinkArrow: { fontSize: 22, fontWeight: '600' },
   empty: { alignItems: 'center', paddingVertical: 80, gap: 8 },
   emptyTitle: { fontSize: 18, fontWeight: '600' },
   emptyBody: { fontSize: 14, textAlign: 'center' },

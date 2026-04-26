@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const MIGRATIONS: Record<number, string> = {
   1: `
@@ -56,5 +56,24 @@ export const MIGRATIONS: Record<number, string> = {
   `,
   5: `
     ALTER TABLE diaries ADD COLUMN session_bodies TEXT;
+  `,
+  6: `
+    CREATE TABLE IF NOT EXISTS anniversaries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      baby_id INTEGER NOT NULL REFERENCES babies(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      icon TEXT NOT NULL DEFAULT '🎉',
+      category TEXT,
+      date TEXT NOT NULL,
+      diary_id INTEGER REFERENCES diaries(id) ON DELETE SET NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_anniversaries_baby_date
+      ON anniversaries(baby_id, date DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_anniversaries_diary
+      ON anniversaries(diary_id);
   `,
 };

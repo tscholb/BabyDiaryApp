@@ -17,6 +17,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { MediaItem } from '@/src/components/MediaCollage';
 import { MediaCollage } from '@/src/components/MediaCollage';
 import { ShareCard } from '@/src/components/ShareCard';
+import { listAnniversariesForDiary } from '@/src/db/anniversaries';
 import { getBaby } from '@/src/db/babies';
 import { deleteDiary, getDiary } from '@/src/db/diaries';
 import { deleteMedia } from '@/src/services/photoStorage';
@@ -25,7 +26,7 @@ import {
   captureShareSlides,
   shareDiarySlides,
 } from '@/src/services/shareDiary';
-import type { Baby, DiaryWithPhotos, Photo } from '@/src/types';
+import type { Anniversary, Baby, DiaryWithPhotos, Photo } from '@/src/types';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { prettyDate } from '@/src/utils/date';
 import { safeBack } from '@/src/utils/navigation';
@@ -39,6 +40,7 @@ export default function DiaryDetailScreen() {
   const palette = Colors[scheme];
   const [diary, setDiary] = useState<DiaryWithPhotos | null>(null);
   const [baby, setBaby] = useState<Baby | null>(null);
+  const [anniversaries, setAnniversaries] = useState<Anniversary[]>([]);
   const [sharing, setSharing] = useState(false);
 
   useFocusEffect(
@@ -46,7 +48,10 @@ export default function DiaryDetailScreen() {
       (async () => {
         const d = await getDiary(diaryId);
         setDiary(d);
-        if (d) setBaby(await getBaby(d.babyId));
+        if (d) {
+          setBaby(await getBaby(d.babyId));
+          setAnniversaries(await listAnniversariesForDiary(diaryId));
+        }
       })();
     }, [diaryId])
   );
@@ -152,6 +157,30 @@ export default function DiaryDetailScreen() {
               <Text style={[styles.age, { color: palette.textMuted }]}>
                 {baby.name} · {getBabyAgeLabel(baby.birthDate, new Date(diary.entryDate))}
               </Text>
+            )}
+            {anniversaries.length > 0 && (
+              <View style={styles.anniversaryRow}>
+                {anniversaries.map(a => (
+                  <View
+                    key={a.id}
+                    style={[
+                      styles.anniversaryBadge,
+                      {
+                        backgroundColor: palette.surfaceAlt,
+                        borderColor: palette.border,
+                      },
+                    ]}>
+                    <Text style={styles.anniversaryEmoji}>{a.icon}</Text>
+                    <Text
+                      style={[
+                        styles.anniversaryName,
+                        { color: palette.text },
+                      ]}>
+                      {a.name}
+                    </Text>
+                  </View>
+                ))}
+              </View>
             )}
             <View style={[styles.divider, { backgroundColor: palette.border }]} />
           </View>
@@ -302,6 +331,23 @@ const styles = StyleSheet.create({
   dateHeader: { marginBottom: 8 },
   date: { fontSize: 22, fontWeight: '700' },
   age: { fontSize: 13, marginTop: 4 },
+  anniversaryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 10,
+  },
+  anniversaryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  anniversaryEmoji: { fontSize: 14 },
+  anniversaryName: { fontSize: 12, fontWeight: '600' },
   divider: {
     height: 1,
     marginTop: 16,

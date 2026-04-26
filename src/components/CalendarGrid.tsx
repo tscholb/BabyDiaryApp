@@ -21,6 +21,7 @@ type Props = {
   month: Date;
   palette: Palette;
   markedDates: Set<string>;
+  anniversaryIcons?: Map<string, string>;
   selectedDate: string | null;
   onChangeMonth: (next: Date) => void;
   onSelectDate: (iso: string) => void;
@@ -32,6 +33,7 @@ export function CalendarGrid({
   month,
   palette,
   markedDates,
+  anniversaryIcons,
   selectedDate,
   onChangeMonth,
   onSelectDate,
@@ -94,11 +96,17 @@ export function CalendarGrid({
             ? palette.tint
             : palette.text;
 
+          const annIcon = anniversaryIcons?.get(iso);
           return (
             <Pressable
               key={iso}
               onPress={() => onSelectDate(iso)}
               style={styles.cell}>
+              {annIcon ? (
+                <Text style={styles.cellEmoji}>{annIcon}</Text>
+              ) : (
+                <View style={styles.cellEmojiPlaceholder} />
+              )}
               <View
                 style={[
                   styles.dayWrap,
@@ -164,19 +172,27 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
+    gap: 1,
   },
   dayWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayNum: { fontSize: 14, fontWeight: '500' },
+  dayNum: { fontSize: 13, fontWeight: '500' },
   dot: {
     width: 4,
     height: 4,
     borderRadius: 2,
+  },
+  cellEmoji: {
+    fontSize: 11,
+    lineHeight: 13,
+    height: 13,
+  },
+  cellEmojiPlaceholder: {
+    height: 13,
   },
 });

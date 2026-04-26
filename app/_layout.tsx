@@ -66,6 +66,10 @@ export default function RootLayout() {
         <Stack.Screen name="baby/[id]/edit" options={{ title: '프로필 수정' }} />
         <Stack.Screen name="diary/new" options={{ title: '새 일기' }} />
         <Stack.Screen name="diary/[id]" options={{ title: '일기' }} />
+        <Stack.Screen
+          name="anniversaries"
+          options={{ headerShown: false }}
+        />
         <Stack.Screen name="settings/ai" options={{ title: 'AI 설정' }} />
         <Stack.Screen name="settings/export" options={{ title: '내보내기' }} />
         <Stack.Screen name="settings/import" options={{ title: '가져오기' }} />

@@ -14,9 +14,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { CalendarGrid } from '@/src/components/CalendarGrid';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { listAnniversariesInRange } from '@/src/db/anniversaries';
 import { getBaby } from '@/src/db/babies';
 import { listDiariesInRange } from '@/src/db/diaries';
-import type { Baby, DiaryWithPhotos } from '@/src/types';
+import type { Anniversary, Baby, DiaryWithPhotos } from '@/src/types';
 import { getActiveBabyId } from '@/src/utils/activeBaby';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { prettyDate, todayISO } from '@/src/utils/date';
@@ -29,6 +30,9 @@ export default function CalendarScreen() {
   const [baby, setBaby] = useState<Baby | null>(null);
   const [month, setMonth] = useState(new Date());
   const [monthDiaries, setMonthDiaries] = useState<DiaryWithPhotos[]>([]);
+  const [monthAnniversaries, setMonthAnniversaries] = useState<Anniversary[]>(
+    []
+  );
   const [selectedDate, setSelectedDate] = useState<string>(todayISO());
 
   const reload = useCallback(async () => {
@@ -36,13 +40,19 @@ export default function CalendarScreen() {
     if (!id) {
       setBaby(null);
       setMonthDiaries([]);
+      setMonthAnniversaries([]);
       return;
     }
     const b = await getBaby(id);
     setBaby(b);
     const start = format(startOfMonth(month), 'yyyy-MM-dd');
     const end = format(endOfMonth(month), 'yyyy-MM-dd');
-    setMonthDiaries(await listDiariesInRange(id, start, end));
+    const [diaries, anns] = await Promise.all([
+      listDiariesInRange(id, start, end),
+      listAnniversariesInRange(id, start, end),
+    ]);
+    setMonthDiaries(diaries);
+    setMonthAnniversaries(anns);
   }, [month]);
 
   useFocusEffect(
@@ -52,7 +62,14 @@ export default function CalendarScreen() {
   );
 
   const markedDates = new Set(monthDiaries.map(d => d.entryDate));
+  const anniversaryIcons = new Map<string, string>();
+  for (const a of monthAnniversaries) {
+    if (!anniversaryIcons.has(a.date)) anniversaryIcons.set(a.date, a.icon);
+  }
   const selectedDiaries = monthDiaries.filter(d => d.entryDate === selectedDate);
+  const selectedAnniversaries = monthAnniversaries.filter(
+    a => a.date === selectedDate
+  );
 
   if (!baby) {
     return (
@@ -73,6 +90,7 @@ export default function CalendarScreen() {
           month={month}
           palette={palette}
           markedDates={markedDates}
+          anniversaryIcons={anniversaryIcons}
           selectedDate={selectedDate}
           onChangeMonth={setMonth}
           onSelectDate={setSelectedDate}
@@ -103,11 +121,49 @@ export default function CalendarScreen() {
         data={selectedDiaries}
         keyExtractor={item => String(item.id)}
         contentContainerStyle={{ padding: 16, gap: 12 }}
+        ListHeaderComponent={
+          selectedAnniversaries.length > 0 ? (
+            <View style={{ gap: 8, marginBottom: 12 }}>
+              {selectedAnniversaries.map(a => (
+                <Pressable
+                  key={a.id}
+                  onPress={() =>
+                    a.diaryId
+                      ? router.push(`/diary/${a.diaryId}`)
+                      : router.push('/anniversaries')
+                  }
+                  style={[
+                    styles.annCard,
+                    {
+                      backgroundColor: palette.surfaceAlt,
+                      borderColor: palette.border,
+                    },
+                  ]}>
+                  <Text style={styles.annEmoji}>{a.icon}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.annName, { color: palette.text }]}>
+                      {a.name}
+                    </Text>
+                    {a.notes ? (
+                      <Text
+                        numberOfLines={2}
+                        style={[styles.annNotes, { color: palette.textMuted }]}>
+                        {a.notes}
+                      </Text>
+                    ) : null}
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
-          <Text
-            style={[styles.emptyHint, { color: palette.textMuted }]}>
-            이 날의 기록이 아직 없어요
-          </Text>
+          selectedAnniversaries.length === 0 ? (
+            <Text
+              style={[styles.emptyHint, { color: palette.textMuted }]}>
+              이 날의 기록이 아직 없어요
+            </Text>
+          ) : null
         }
         renderItem={({ item }) => (
           <Pressable
@@ -172,4 +228,15 @@ const styles = StyleSheet.create({
   },
   thumb: { width: 64, height: 64, borderRadius: 8 },
   cardBody: { flex: 1, fontSize: 14, lineHeight: 20 },
+  annCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  annEmoji: { fontSize: 24 },
+  annName: { fontSize: 15, fontWeight: '600' },
+  annNotes: { fontSize: 12, marginTop: 2, lineHeight: 16 },
 });

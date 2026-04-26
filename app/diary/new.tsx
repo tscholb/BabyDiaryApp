@@ -21,6 +21,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import {
+  AnniversaryPicker,
+  type AnniversaryDraft,
+} from '@/src/components/AnniversaryPicker';
+import {
+  createAnniversary,
+  deleteAnniversary,
+  listAnniversariesForDiary,
+} from '@/src/db/anniversaries';
 import { getBaby } from '@/src/db/babies';
 import type { MediaMeta } from '@/src/db/diaries';
 import { createDiary, getDiary, updateDiary } from '@/src/db/diaries';
@@ -31,7 +40,7 @@ import {
   persistPhoto,
   persistVideo,
 } from '@/src/services/photoStorage';
-import type { Baby, PhotoLayout } from '@/src/types';
+import type { Anniversary, Baby, PhotoLayout } from '@/src/types';
 import { getActiveBabyId } from '@/src/utils/activeBaby';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { parseExifDate, parseExifDateTime, prettyDate, todayISO } from '@/src/utils/date';
@@ -86,6 +95,14 @@ export default function DiaryEditorScreen() {
   );
   const [customRequest, setCustomRequest] = useState('');
   const [requestOpen, setRequestOpen] = useState(false);
+  const [existingAnniversaries, setExistingAnniversaries] = useState<Anniversary[]>([]);
+  const [pendingAnniversaryDrafts, setPendingAnniversaryDrafts] = useState<
+    AnniversaryDraft[]
+  >([]);
+  const [removedAnniversaryIds, setRemovedAnniversaryIds] = useState<Set<number>>(
+    new Set()
+  );
+  const [anniversaryPickerOpen, setAnniversaryPickerOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   const scrollToInput = (target: number | null) => {
@@ -145,6 +162,9 @@ export default function DiaryEditorScreen() {
             };
           }
           setMediaByUri(existingMedia);
+
+          const existing = await listAnniversariesForDiary(editingId);
+          setExistingAnniversaries(existing);
         }
       }
     })();
@@ -392,6 +412,7 @@ export default function DiaryEditorScreen() {
     setSaving(true);
     try {
       const cleanedSessions = sessions.map(s => [...s]);
+      let savedDiaryId: number;
       if (editingId) {
         await updateDiary(editingId, {
           body: combinedBody,
@@ -409,8 +430,9 @@ export default function DiaryEditorScreen() {
             deleteMedia(u, mediaByUri[u]?.thumbnailUri ?? null)
           )
         );
+        savedDiaryId = editingId;
       } else {
-        await createDiary({
+        const created = await createDiary({
           babyId: baby.id,
           entryDate,
           body: combinedBody,
@@ -420,7 +442,24 @@ export default function DiaryEditorScreen() {
           mediaByUri,
           aiGenerated: aiUsed,
         });
+        savedDiaryId = created.id;
       }
+
+      for (const id of removedAnniversaryIds) {
+        await deleteAnniversary(id);
+      }
+      for (const draft of pendingAnniversaryDrafts) {
+        await createAnniversary({
+          babyId: baby.id,
+          name: draft.name,
+          icon: draft.icon,
+          category: draft.category,
+          date: draft.date,
+          notes: draft.notes,
+          diaryId: savedDiaryId,
+        });
+      }
+
       safeBack();
     } catch (e) {
       Alert.alert('저장 실패', e instanceof Error ? e.message : String(e));
@@ -491,6 +530,105 @@ export default function DiaryEditorScreen() {
                 사진 촬영일로 자동 설정됐어요
               </Text>
             )}
+          </View>
+
+          <View style={styles.anniversarySection}>
+            <Text style={[styles.anniversaryLabel, { color: palette.textMuted }]}>
+              기념일
+            </Text>
+            <View style={styles.anniversaryChips}>
+              {existingAnniversaries
+                .filter(a => !removedAnniversaryIds.has(a.id))
+                .map(a => (
+                  <View
+                    key={`existing-${a.id}`}
+                    style={[
+                      styles.anniversaryChip,
+                      {
+                        backgroundColor: palette.surface,
+                        borderColor: palette.border,
+                      },
+                    ]}>
+                    <Text style={styles.anniversaryChipEmoji}>{a.icon}</Text>
+                    <Text
+                      style={[
+                        styles.anniversaryChipText,
+                        { color: palette.text },
+                      ]}>
+                      {a.name}
+                    </Text>
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() =>
+                        setRemovedAnniversaryIds(prev => {
+                          const next = new Set(prev);
+                          next.add(a.id);
+                          return next;
+                        })
+                      }>
+                      <Text
+                        style={[
+                          styles.anniversaryChipRemove,
+                          { color: palette.textMuted },
+                        ]}>
+                        ×
+                      </Text>
+                    </Pressable>
+                  </View>
+                ))}
+              {pendingAnniversaryDrafts.map((draft, idx) => (
+                <View
+                  key={`draft-${idx}`}
+                  style={[
+                    styles.anniversaryChip,
+                    {
+                      backgroundColor: palette.surface,
+                      borderColor: palette.tint,
+                    },
+                  ]}>
+                  <Text style={styles.anniversaryChipEmoji}>{draft.icon}</Text>
+                  <Text
+                    style={[
+                      styles.anniversaryChipText,
+                      { color: palette.text },
+                    ]}>
+                    {draft.name}
+                  </Text>
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() =>
+                      setPendingAnniversaryDrafts(prev =>
+                        prev.filter((_, i) => i !== idx)
+                      )
+                    }>
+                    <Text
+                      style={[
+                        styles.anniversaryChipRemove,
+                        { color: palette.textMuted },
+                      ]}>
+                      ×
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+              <Pressable
+                onPress={() => setAnniversaryPickerOpen(true)}
+                style={[
+                  styles.anniversaryAddBtn,
+                  {
+                    backgroundColor: palette.surfaceAlt,
+                    borderColor: palette.border,
+                  },
+                ]}>
+                <Text
+                  style={[
+                    styles.anniversaryAddText,
+                    { color: palette.tint },
+                  ]}>
+                  + 기념일 추가
+                </Text>
+              </Pressable>
+            </View>
           </View>
 
           {banner && (
@@ -626,6 +764,16 @@ export default function DiaryEditorScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <AnniversaryPicker
+        visible={anniversaryPickerOpen}
+        onClose={() => setAnniversaryPickerOpen(false)}
+        onSave={draft => {
+          setPendingAnniversaryDrafts(prev => [...prev, draft]);
+          setAnniversaryPickerOpen(false);
+        }}
+        initialDate={entryDate}
+      />
     </SafeAreaView>
   );
 }
@@ -812,6 +960,37 @@ const styles = StyleSheet.create({
   metaDate: { fontSize: 18, fontWeight: '700' },
   metaAge: { fontSize: 13, marginTop: 4 },
   metaHint: { fontSize: 12, marginTop: 6, fontWeight: '500' },
+  anniversarySection: { gap: 8 },
+  anniversaryLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  anniversaryChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  anniversaryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  anniversaryChipEmoji: { fontSize: 14 },
+  anniversaryChipText: { fontSize: 13, fontWeight: '500' },
+  anniversaryChipRemove: { fontSize: 18, marginLeft: 2 },
+  anniversaryAddBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
+  anniversaryAddText: { fontSize: 13, fontWeight: '600' },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',

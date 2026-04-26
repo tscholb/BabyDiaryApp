@@ -39,6 +39,26 @@ export type DiaryWithPhotos = Diary & {
   photos: Photo[];
 };
 
+export type AnniversaryCategory =
+  | 'date'
+  | 'physical'
+  | 'language'
+  | 'social'
+  | 'event'
+  | 'custom';
+
+export type Anniversary = {
+  id: number;
+  babyId: number;
+  name: string;
+  icon: string;
+  category: AnniversaryCategory | null;
+  date: string;
+  diaryId: number | null;
+  notes: string | null;
+  createdAt: string;
+};
+
 export type AiProvider = 'gemini' | 'claude' | 'openai';
 
 export type AiSettings = {

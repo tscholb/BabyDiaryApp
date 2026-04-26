@@ -31,6 +31,7 @@ async function runMigrations(db: SQLite.SQLiteDatabase) {
 export async function resetDatabase() {
   const db = await getDatabase();
   await db.execAsync(`
+    DROP TABLE IF EXISTS anniversaries;
     DROP TABLE IF EXISTS photos;
     DROP TABLE IF EXISTS diaries;
     DROP TABLE IF EXISTS babies;
