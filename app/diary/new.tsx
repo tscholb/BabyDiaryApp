@@ -890,12 +890,18 @@ function SessionCard({
           const meta = mediaByUri[uri];
           const isVideo = meta?.mediaType === 'video';
           const thumb = meta?.thumbnailUri ?? uri;
+          const hasGps = meta?.latitude != null && meta?.longitude != null;
           return (
           <View key={uri} style={styles.photoWrap}>
             <Image source={{ uri: thumb }} style={styles.photoThumb} />
             {isVideo && (
               <View style={styles.videoBadge} pointerEvents="none">
                 <Text style={styles.videoBadgeText}>▶</Text>
+              </View>
+            )}
+            {hasGps && (
+              <View style={styles.gpsBadge} pointerEvents="none">
+                <Text style={styles.gpsBadgeText}>📍</Text>
               </View>
             )}
             <Pressable
@@ -1064,6 +1070,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   videoBadgeText: { color: '#fff', fontSize: 11, marginLeft: 2 },
+  gpsBadge: {
+    position: 'absolute',
+    bottom: 4,
+    left: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  gpsBadgeText: { color: '#fff', fontSize: 11 },
   layoutRow: { gap: 8 },
   layoutLabel: { fontSize: 12, fontWeight: '600', textTransform: 'uppercase' },
   layoutChips: {
