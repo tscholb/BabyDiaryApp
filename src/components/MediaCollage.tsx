@@ -1,4 +1,5 @@
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { useState } from 'react';
 import { useWindowDimensions, View, StyleSheet, Image, Pressable, Text } from 'react-native';
 
 import type { PhotoLayout } from '@/src/types';
@@ -307,21 +308,33 @@ function VideoSurface({
   height: number;
   borderRadius: number;
 }) {
-  if (item.thumbnailUri) {
+  const [playing, setPlaying] = useState(false);
+
+  if (!playing && item.thumbnailUri) {
     return (
-      <View style={{ width, height, borderRadius, overflow: 'hidden' }}>
-        <Image
-          source={{ uri: item.thumbnailUri }}
-          style={{ width, height }}
-          resizeMode="cover"
-        />
-        <View style={styles.playBadge} pointerEvents="none">
-          <Text style={styles.playIcon}>▶</Text>
+      <Pressable onPress={() => setPlaying(true)}>
+        <View style={{ width, height, borderRadius, overflow: 'hidden' }}>
+          <Image
+            source={{ uri: item.thumbnailUri }}
+            style={{ width, height }}
+            resizeMode="cover"
+          />
+          <View style={styles.playBadge} pointerEvents="none">
+            <Text style={styles.playIcon}>▶</Text>
+          </View>
         </View>
-      </View>
+      </Pressable>
     );
   }
-  return <InlineVideo item={item} width={width} height={height} borderRadius={borderRadius} />;
+  return (
+    <InlineVideo
+      item={item}
+      width={width}
+      height={height}
+      borderRadius={borderRadius}
+      autoPlay={playing}
+    />
+  );
 }
 
 function InlineVideo({
@@ -329,15 +342,18 @@ function InlineVideo({
   width,
   height,
   borderRadius,
+  autoPlay = false,
 }: {
   item: MediaItem;
   width: number;
   height: number;
   borderRadius: number;
+  autoPlay?: boolean;
 }) {
   const player = useVideoPlayer(item.uri, p => {
     p.loop = false;
-    p.muted = true;
+    p.muted = false;
+    if (autoPlay) p.play();
   });
 
   return (
@@ -345,12 +361,9 @@ function InlineVideo({
       <VideoView
         player={player}
         style={{ width, height }}
-        nativeControls={false}
+        nativeControls
         contentFit="cover"
       />
-      <View style={styles.playBadge} pointerEvents="none">
-        <Text style={styles.playIcon}>▶</Text>
-      </View>
     </View>
   );
 }
