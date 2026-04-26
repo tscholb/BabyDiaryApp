@@ -44,6 +44,7 @@ import type { Anniversary, Baby, PhotoLayout } from '@/src/types';
 import { getActiveBabyId } from '@/src/utils/activeBaby';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { parseExifDate, parseExifDateTime, prettyDate, todayISO } from '@/src/utils/date';
+import { parseExifGps } from '@/src/utils/exif';
 import { safeBack } from '@/src/utils/navigation';
 import { groupPhotosBySession } from '@/src/utils/sessions';
 
@@ -159,6 +160,8 @@ export default function DiaryEditorScreen() {
               capturedAt: p.capturedAt,
               mediaType: p.mediaType,
               thumbnailUri: p.thumbnailUri,
+              latitude: p.latitude,
+              longitude: p.longitude,
             };
           }
           setMediaByUri(existingMedia);
@@ -215,6 +218,8 @@ export default function DiaryEditorScreen() {
       const addedUris: string[] = [];
       const metaEntries: Array<[string, MediaMeta]> = [];
       for (const asset of result.assets) {
+        const exif = asset.exif as Record<string, unknown> | null;
+        const gps = parseExifGps(exif);
         if (asset.type === 'video') {
           const { videoUri, thumbnailUri } = await persistVideo(asset.uri);
           addedUris.push(videoUri);
@@ -223,9 +228,9 @@ export default function DiaryEditorScreen() {
             {
               mediaType: 'video',
               thumbnailUri,
-              capturedAt: parseExifDateTime(
-                asset.exif as Record<string, unknown> | null
-              ),
+              capturedAt: parseExifDateTime(exif),
+              latitude: gps?.latitude ?? null,
+              longitude: gps?.longitude ?? null,
             },
           ]);
         } else {
@@ -236,9 +241,9 @@ export default function DiaryEditorScreen() {
             {
               mediaType: 'photo',
               thumbnailUri: null,
-              capturedAt: parseExifDateTime(
-                asset.exif as Record<string, unknown> | null
-              ),
+              capturedAt: parseExifDateTime(exif),
+              latitude: gps?.latitude ?? null,
+              longitude: gps?.longitude ?? null,
             },
           ]);
         }
@@ -267,13 +272,22 @@ export default function DiaryEditorScreen() {
     if (result.canceled) return;
     try {
       const asset = result.assets[0];
+      const exif = asset.exif as Record<string, unknown> | null;
       const stored = await persistPhoto(asset.uri);
-      const capturedAt =
-        parseExifDateTime(asset.exif as Record<string, unknown> | null) ??
-        new Date().toISOString();
+      const capturedAt = parseExifDateTime(exif) ?? new Date().toISOString();
+      const gps = parseExifGps(exif);
       addPhotoToSession(sIdx, stored);
       mergeMedia([
-        [stored, { mediaType: 'photo', thumbnailUri: null, capturedAt }],
+        [
+          stored,
+          {
+            mediaType: 'photo',
+            thumbnailUri: null,
+            capturedAt,
+            latitude: gps?.latitude ?? null,
+            longitude: gps?.longitude ?? null,
+          },
+        ],
       ]);
       maybeApplyExifDate(result.assets);
     } catch (e) {

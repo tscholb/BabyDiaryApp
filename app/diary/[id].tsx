@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { LocationMap } from '@/src/components/LocationMap';
 import type { MediaItem } from '@/src/components/MediaCollage';
 import { MediaCollage } from '@/src/components/MediaCollage';
 import { ShareCard } from '@/src/components/ShareCard';
@@ -277,6 +278,21 @@ export default function DiaryDetailScreen() {
             );
           })()}
 
+          {(() => {
+            const geoPoints = diary.photos
+              .filter(
+                (p): p is Photo & { latitude: number; longitude: number } =>
+                  p.latitude != null && p.longitude != null
+              )
+              .map(p => ({ latitude: p.latitude, longitude: p.longitude }));
+            if (geoPoints.length === 0) return null;
+            return (
+              <View style={styles.mapWrap}>
+                <LocationMap points={geoPoints} />
+              </View>
+            );
+          })()}
+
           {diary.aiGenerated ? (
             <View style={styles.aiChip}>
               <IconSymbol name="sparkles" size={12} color={palette.textMuted} />
@@ -373,6 +389,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   aiChipText: { fontSize: 11 },
+  mapWrap: { marginTop: 16 },
   offscreen: {
     position: 'absolute',
     left: -10000,

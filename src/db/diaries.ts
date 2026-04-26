@@ -23,6 +23,8 @@ type PhotoRow = {
   captured_at: string | null;
   media_type: string | null;
   thumbnail_uri: string | null;
+  latitude: number | null;
+  longitude: number | null;
   created_at: string;
 };
 
@@ -70,6 +72,8 @@ const mapPhoto = (row: PhotoRow): Photo => ({
   capturedAt: row.captured_at ?? null,
   mediaType: normalizeMediaType(row.media_type),
   thumbnailUri: row.thumbnail_uri ?? null,
+  latitude: row.latitude ?? null,
+  longitude: row.longitude ?? null,
   createdAt: row.created_at,
 });
 
@@ -122,6 +126,8 @@ export type MediaMeta = {
   capturedAt?: string | null;
   mediaType?: MediaType;
   thumbnailUri?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 };
 
 export async function createDiary(input: {
@@ -160,15 +166,16 @@ export async function createDiary(input: {
       const session = input.photoSessions[s];
       for (let i = 0; i < session.length; i++) {
         const uri = session[i];
+        const meta = input.mediaByUri?.[uri];
         const capturedAt =
-          input.mediaByUri?.[uri]?.capturedAt ??
-          input.capturedAtByUri?.[uri] ??
-          null;
-        const mediaType = input.mediaByUri?.[uri]?.mediaType ?? 'photo';
-        const thumbnailUri = input.mediaByUri?.[uri]?.thumbnailUri ?? null;
+          meta?.capturedAt ?? input.capturedAtByUri?.[uri] ?? null;
+        const mediaType = meta?.mediaType ?? 'photo';
+        const thumbnailUri = meta?.thumbnailUri ?? null;
+        const latitude = meta?.latitude ?? null;
+        const longitude = meta?.longitude ?? null;
         await db.runAsync(
-          'INSERT INTO photos (diary_id, uri, order_index, session_index, captured_at, media_type, thumbnail_uri) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [diaryId, uri, i, s, capturedAt, mediaType, thumbnailUri]
+          'INSERT INTO photos (diary_id, uri, order_index, session_index, captured_at, media_type, thumbnail_uri, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [diaryId, uri, i, s, capturedAt, mediaType, thumbnailUri, latitude, longitude]
         );
       }
     }
@@ -231,15 +238,16 @@ export async function updateDiary(
         const session = patch.photoSessions[s];
         for (let i = 0; i < session.length; i++) {
           const uri = session[i];
+          const meta = patch.mediaByUri?.[uri];
           const capturedAt =
-            patch.mediaByUri?.[uri]?.capturedAt ??
-            patch.capturedAtByUri?.[uri] ??
-            null;
-          const mediaType = patch.mediaByUri?.[uri]?.mediaType ?? 'photo';
-          const thumbnailUri = patch.mediaByUri?.[uri]?.thumbnailUri ?? null;
+            meta?.capturedAt ?? patch.capturedAtByUri?.[uri] ?? null;
+          const mediaType = meta?.mediaType ?? 'photo';
+          const thumbnailUri = meta?.thumbnailUri ?? null;
+          const latitude = meta?.latitude ?? null;
+          const longitude = meta?.longitude ?? null;
           await db.runAsync(
-            'INSERT INTO photos (diary_id, uri, order_index, session_index, captured_at, media_type, thumbnail_uri) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [id, uri, i, s, capturedAt, mediaType, thumbnailUri]
+            'INSERT INTO photos (diary_id, uri, order_index, session_index, captured_at, media_type, thumbnail_uri, latitude, longitude) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [id, uri, i, s, capturedAt, mediaType, thumbnailUri, latitude, longitude]
           );
         }
       }

@@ -32,6 +32,8 @@ export type Photo = {
   capturedAt: string | null;
   mediaType: MediaType;
   thumbnailUri: string | null;
+  latitude: number | null;
+  longitude: number | null;
   createdAt: string;
 };
 

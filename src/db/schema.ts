@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const MIGRATIONS: Record<number, string> = {
   1: `
@@ -75,5 +75,9 @@ export const MIGRATIONS: Record<number, string> = {
 
     CREATE INDEX IF NOT EXISTS idx_anniversaries_diary
       ON anniversaries(diary_id);
+  `,
+  7: `
+    ALTER TABLE photos ADD COLUMN latitude REAL;
+    ALTER TABLE photos ADD COLUMN longitude REAL;
   `,
 };

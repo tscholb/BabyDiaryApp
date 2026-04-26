@@ -9,7 +9,7 @@ import { createDiary, listDiaries } from '../db/diaries';
 import type { AnniversaryCategory } from '../types';
 import { groupPhotosBySession } from '../utils/sessions';
 
-const BACKUP_VERSION = 6;
+const BACKUP_VERSION = 7;
 
 type BackupManifest = {
   version: number;
@@ -38,6 +38,9 @@ type BackupManifest = {
       sessionBodies?: string[];
       // v6+ diary index inside the baby (so anniversaries can link)
       indexInBaby?: number;
+      // v7+ per-file GPS coords, keyed by zip filename
+      latitude?: Record<string, number | null>;
+      longitude?: Record<string, number | null>;
     }>;
     // v6+ anniversaries with optional diaryIndex link
     anniversaries?: Array<{
@@ -112,6 +115,8 @@ export async function exportBackup(): Promise<BackupResult> {
         const capturedAt: Record<string, string | null> = {};
         const mediaType: Record<string, 'photo' | 'video'> = {};
         const thumbnailFor: Record<string, string> = {};
+        const latitude: Record<string, number | null> = {};
+        const longitude: Record<string, number | null> = {};
 
         for (const photo of diary.photos) {
           const info = await FileSystem.getInfoAsync(photo.uri);
@@ -124,6 +129,8 @@ export async function exportBackup(): Promise<BackupResult> {
           uriToFilename.set(photo.uri, fname);
           capturedAt[fname] = photo.capturedAt;
           mediaType[fname] = photo.mediaType;
+          latitude[fname] = photo.latitude;
+          longitude[fname] = photo.longitude;
           photoCount++;
 
           if (photo.thumbnailUri) {
@@ -155,6 +162,8 @@ export async function exportBackup(): Promise<BackupResult> {
           mediaType,
           thumbnailFor,
           sessionBodies: diary.sessionBodies,
+          latitude,
+          longitude,
         });
         diaryCount++;
       }
@@ -266,7 +275,13 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
 
         const mediaByUri: Record<
           string,
-          { capturedAt?: string | null; mediaType?: 'photo' | 'video'; thumbnailUri?: string | null }
+          {
+            capturedAt?: string | null;
+            mediaType?: 'photo' | 'video';
+            thumbnailUri?: string | null;
+            latitude?: number | null;
+            longitude?: number | null;
+          }
         > = {};
         const restoredSessions: string[][] = [];
         for (const session of sessionsInput) {
@@ -288,6 +303,8 @@ export async function importBackup(zipUri: string): Promise<RestoreResult> {
                 capturedAt: diaryEntry.capturedAt?.[zipFile] ?? null,
                 mediaType,
                 thumbnailUri,
+                latitude: diaryEntry.latitude?.[zipFile] ?? null,
+                longitude: diaryEntry.longitude?.[zipFile] ?? null,
               };
               photoCount++;
             }
