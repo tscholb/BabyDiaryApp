@@ -217,9 +217,22 @@ export default function DiaryEditorScreen() {
     try {
       const addedUris: string[] = [];
       const metaEntries: Array<[string, MediaMeta]> = [];
+      const debugLines: string[] = [];
       for (const asset of result.assets) {
         const exif = asset.exif as Record<string, unknown> | null;
         const gps = parseExifGps(exif);
+        const exifKeys = exif ? Object.keys(exif).join(', ') : '(없음)';
+        const gpsKeys = exif
+          ? Object.keys(exif)
+              .filter(k => /gps/i.test(k))
+              .join(', ') || '(GPS 키 없음)'
+          : '(EXIF 없음)';
+        debugLines.push(
+          `[${asset.type ?? 'image'}]\n` +
+            `  GPS 추출: ${gps ? `${gps.latitude.toFixed(5)}, ${gps.longitude.toFixed(5)}` : '실패'}\n` +
+            `  GPS 관련 키: ${gpsKeys}\n` +
+            `  전체 EXIF 키: ${exifKeys || '(빈 객체)'}`
+        );
         if (asset.type === 'video') {
           const { videoUri, thumbnailUri } = await persistVideo(asset.uri);
           addedUris.push(videoUri);
@@ -253,6 +266,7 @@ export default function DiaryEditorScreen() {
       );
       mergeMedia(metaEntries);
       maybeApplyExifDate(result.assets);
+      Alert.alert('EXIF 디버그', debugLines.join('\n\n').slice(0, 1500));
     } catch (e) {
       Alert.alert('추가 실패', e instanceof Error ? e.message : String(e));
     }
