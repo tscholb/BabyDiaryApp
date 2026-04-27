@@ -217,9 +217,30 @@ export default function DiaryEditorScreen() {
     try {
       const addedUris: string[] = [];
       const metaEntries: Array<[string, MediaMeta]> = [];
+      const failureReports: string[] = [];
       for (const asset of result.assets) {
         const exif = asset.exif as Record<string, unknown> | null;
         const gps = parseExifGps(exif);
+        if (!gps && exif) {
+          const lat = (exif as Record<string, unknown>).GPSLatitude;
+          const lng = (exif as Record<string, unknown>).GPSLongitude;
+          const latRef = (exif as Record<string, unknown>).GPSLatitudeRef;
+          const lngRef = (exif as Record<string, unknown>).GPSLongitudeRef;
+          const repr = (v: unknown): string => {
+            if (v == null) return '(없음)';
+            if (typeof v === 'string') return `"${v}" (string)`;
+            if (typeof v === 'number') return `${v} (number)`;
+            if (Array.isArray(v))
+              return `[${v.map(x => JSON.stringify(x)).join(', ')}] (array)`;
+            return `${JSON.stringify(v)} (${typeof v})`;
+          };
+          failureReports.push(
+            `Lat: ${repr(lat)}\n` +
+              `Lng: ${repr(lng)}\n` +
+              `LatRef: ${repr(latRef)}\n` +
+              `LngRef: ${repr(lngRef)}`
+          );
+        }
         if (asset.type === 'video') {
           const { videoUri, thumbnailUri } = await persistVideo(asset.uri);
           addedUris.push(videoUri);
@@ -253,6 +274,12 @@ export default function DiaryEditorScreen() {
       );
       mergeMedia(metaEntries);
       maybeApplyExifDate(result.assets);
+      if (failureReports.length > 0) {
+        Alert.alert(
+          'GPS 파싱 실패 (디버그)',
+          failureReports.join('\n\n---\n\n').slice(0, 1500)
+        );
+      }
     } catch (e) {
       Alert.alert('추가 실패', e instanceof Error ? e.message : String(e));
     }
