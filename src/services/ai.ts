@@ -19,7 +19,9 @@ type GenerateInput = {
   babyAgeLabel: string;
   entryDate: string;
   customStyle?: string;
-  customRequest?: string;
+  // Optional per-session keywords / draft notes the user typed before
+  // generating. Parallel to photoSessions; empty strings are ignored.
+  userNotes?: string[];
 };
 
 function formatKoreanTimeRange(
@@ -60,12 +62,36 @@ const PROMPT = (input: GenerateInput) => {
   const styleBlock = input.customStyle?.trim()
     ? `\n사용자가 설정한 기본 말투/스타일:\n${input.customStyle.trim()}\n(위 스타일을 우선 반영해서 써줘. 아래 규칙과 충돌하면 사용자 스타일이 우선이야.)\n`
     : '';
-  const requestBlock = input.customRequest?.trim()
-    ? `\n이번 일기에만 적용할 요청:\n${input.customRequest.trim()}\n(이 요청을 가장 우선으로 반영해서 써줘.)\n`
-    : '';
 
   const nonEmptySessions = input.photoSessions.filter(s => s.length > 0);
   const nonEmptySessionCount = nonEmptySessions.length;
+
+  // Build a notes block from userNotes, mapped to non-empty session indices.
+  const nonEmptySessionIndices: number[] = [];
+  input.photoSessions.forEach((s, i) => {
+    if (s.length > 0) nonEmptySessionIndices.push(i);
+  });
+  const userNotesPerSession = nonEmptySessionIndices
+    .map(idx => (input.userNotes?.[idx] ?? '').trim())
+    .filter(n => n.length > 0);
+  const hasNotes = userNotesPerSession.length > 0;
+  const notesBlock = (() => {
+    if (!hasNotes) return '';
+    if (nonEmptySessionCount === 1) {
+      return `\n사용자가 미리 적어둔 메모/키워드 (꼭 반영할 것):\n${userNotesPerSession[0]}\n(위 메모에 적힌 내용/장소/감정을 사진과 함께 자연스럽게 풀어쓰는 방식으로 작성해줘. 사진엔 안 보여도 메모에 적힌 사실은 그대로 받아들여서 써줘.)\n`;
+    }
+    const lines = nonEmptySessionIndices
+      .map((idx, n) => {
+        const note = (input.userNotes?.[idx] ?? '').trim();
+        return note
+          ? `- [세션 ${n + 1}]: ${note}`
+          : `- [세션 ${n + 1}]: (메모 없음)`;
+      })
+      .join('\n');
+    return `\n사용자가 각 세션에 미리 적어둔 메모/키워드 (꼭 반영할 것):
+${lines}
+(메모에 적힌 내용/장소/감정을 그 세션의 사진과 함께 자연스럽게 풀어쓰는 방식으로 작성해줘. 사진엔 안 보여도 메모에 적힌 사실은 그대로 받아들여서 써줘. 메모가 없는 세션은 사진만 보고 자유롭게 써.)\n`;
+  })();
 
   const sessionTimeLines = nonEmptySessions
     .map((session, i) => {
@@ -104,7 +130,7 @@ ${sessionTimeLines.join('\n')}
 - 이름: ${input.babyName}
 - 나이: ${input.babyAgeLabel}
 - 날짜: ${input.entryDate}
-${sessionBlock}${timeHintBlock}${styleBlock}${requestBlock}
+${sessionBlock}${timeHintBlock}${notesBlock}${styleBlock}
 작성 규칙:
 - 이름은 반드시 **성(姓)을 빼고 이름 부분만** 부를 것. 예: '김서현' → '서현이', '이지훈' → '지훈이'. 받침이 있으면 '이'를, 없으면 '가' 또는 그대로 붙여 자연스럽게 호명
 - 1인칭 부모 시점으로 "우리 서현이가...", "오늘은...", "너무 예뻤어" 처럼 자연스럽게

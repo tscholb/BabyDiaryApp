@@ -45,6 +45,7 @@ import { getActiveBabyId } from '@/src/utils/activeBaby';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { parseExifDate, parseExifDateTime, prettyDate, todayISO } from '@/src/utils/date';
 import { parseExifGps } from '@/src/utils/exif';
+import { ensureMediaLocationPermission } from '@/src/utils/permissions';
 import { safeBack } from '@/src/utils/navigation';
 import { groupPhotosBySession } from '@/src/utils/sessions';
 
@@ -94,8 +95,6 @@ export default function DiaryEditorScreen() {
   const [userTouchedDate, setUserTouchedDate] = useState(
     Boolean(date) || Boolean(id)
   );
-  const [customRequest, setCustomRequest] = useState('');
-  const [requestOpen, setRequestOpen] = useState(false);
   const [existingAnniversaries, setExistingAnniversaries] = useState<Anniversary[]>([]);
   const [pendingAnniversaryDrafts, setPendingAnniversaryDrafts] = useState<
     AnniversaryDraft[]
@@ -206,6 +205,7 @@ export default function DiaryEditorScreen() {
       Alert.alert('사진첩 접근 권한이 필요해요');
       return;
     }
+    await ensureMediaLocationPermission();
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.All,
       allowsMultipleSelection: true,
@@ -377,7 +377,7 @@ export default function DiaryEditorScreen() {
         babyName: baby.name,
         babyAgeLabel: ageLabel,
         entryDate,
-        customRequest: customRequest.trim() || undefined,
+        userNotes: sessionTexts.map(t => t.trim()),
       });
       if (result.ok) {
         setBody(result.text);
@@ -711,38 +711,6 @@ export default function DiaryEditorScreen() {
           {aiEnabled && (
             <View style={{ gap: 8 }}>
               <Pressable
-                onPress={() => setRequestOpen(v => !v)}
-                style={styles.requestToggle}>
-                <Text
-                  style={[styles.requestToggleText, { color: palette.tint }]}>
-                  {requestOpen
-                    ? '− 요청사항 닫기'
-                    : customRequest.trim()
-                    ? `+ 요청사항 (${customRequest.trim().length}자)`
-                    : '+ 이번 일기에만 적용할 요청사항 추가'}
-                </Text>
-              </Pressable>
-
-              {requestOpen && (
-                <TextInput
-                  value={customRequest}
-                  onChangeText={setCustomRequest}
-                  onFocus={e => scrollToInput(e.target as unknown as number)}
-                  placeholder="예: 오늘은 짧고 담백하게, 감탄사 없이"
-                  placeholderTextColor={palette.textMuted}
-                  multiline
-                  style={[
-                    styles.requestInput,
-                    {
-                      backgroundColor: palette.surface,
-                      color: palette.text,
-                      borderColor: palette.border,
-                    },
-                  ]}
-                />
-              )}
-
-              <Pressable
                 onPress={generateAiDraft}
                 disabled={generating || allPhotos.length === 0}
                 style={[
@@ -768,6 +736,10 @@ export default function DiaryEditorScreen() {
                     : 'AI 초안 생성'}
                 </Text>
               </Pressable>
+
+              <Text style={[styles.aiHint, { color: palette.textMuted }]}>
+                각 세션 글에 키워드만 적어두면 AI가 그걸 바탕으로 풀어써줘요
+              </Text>
 
               {aiModel && (
                 <Text style={[styles.aiModelHint, { color: palette.textMuted }]}>
@@ -943,8 +915,8 @@ function SessionCard({
         onFocus={e => onTextFocus(e.target as unknown as number)}
         placeholder={
           total > 1
-            ? '이 시간대에 있었던 일을 적어보세요'
-            : '오늘 아기의 모습을 기록해보세요'
+            ? '이 시간대 키워드 또는 한 줄 메모 (예: 놀이터, 모래놀이)'
+            : '오늘 키워드 또는 한 줄 메모 (예: 놀이터에서 둘이 모래놀이)'
         }
         placeholderTextColor={palette.textMuted}
         style={[
@@ -1130,23 +1102,15 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   aiBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  aiModelHint: {
+  aiHint: {
     fontSize: 12,
     textAlign: 'center',
     marginTop: 2,
   },
-  requestToggle: {
-    alignSelf: 'flex-start',
-    paddingVertical: 4,
-  },
-  requestToggleText: { fontSize: 13, fontWeight: '600' },
-  requestInput: {
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    fontSize: 14,
-    minHeight: 72,
-    textAlignVertical: 'top',
+  aiModelHint: {
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 2,
   },
   bodyInput: {
     minHeight: 200,
