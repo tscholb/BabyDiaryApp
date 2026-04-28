@@ -18,6 +18,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import * as MediaLibrary from 'expo-media-library';
+
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -25,6 +27,7 @@ import {
   AnniversaryPicker,
   type AnniversaryDraft,
 } from '@/src/components/AnniversaryPicker';
+import { PhotoLibraryPicker } from '@/src/components/PhotoLibraryPicker';
 import {
   createAnniversary,
   deleteAnniversary,
@@ -45,10 +48,7 @@ import { getActiveBabyId } from '@/src/utils/activeBaby';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { parseExifDate, parseExifDateTime, prettyDate, todayISO } from '@/src/utils/date';
 import { parseExifGps } from '@/src/utils/exif';
-import {
-  lookupAssetLocation,
-  requestMediaLibraryPermission,
-} from '@/src/utils/mediaLibraryGps';
+import { requestMediaLibraryPermission } from '@/src/utils/mediaLibraryGps';
 import { ensureMediaLocationPermission } from '@/src/utils/permissions';
 import { safeBack } from '@/src/utils/navigation';
 import { groupPhotosBySession } from '@/src/utils/sessions';
@@ -107,6 +107,11 @@ export default function DiaryEditorScreen() {
     new Set()
   );
   const [anniversaryPickerOpen, setAnniversaryPickerOpen] = useState(false);
+  const [photoPickerOpen, setPhotoPickerOpen] = useState(false);
+  const [photoPickerSession, setPhotoPickerSession] = useState<number | null>(
+    null
+  );
+  const [uriToAssetId, setUriToAssetId] = useState<Record<string, string>>({});
   const scrollRef = useRef<ScrollView>(null);
 
   const scrollToInput = (target: number | null) => {
@@ -204,72 +209,100 @@ export default function DiaryEditorScreen() {
       Alert.alert(`한 세션에 최대 ${MAX_PHOTOS_PER_SESSION}개까지 넣을 수 있어요`);
       return;
     }
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
+    await ensureMediaLocationPermission();
+    const granted = await requestMediaLibraryPermission();
+    if (!granted) {
       Alert.alert('사진첩 접근 권한이 필요해요');
       return;
     }
-    await ensureMediaLocationPermission();
-    await requestMediaLibraryPermission();
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
-      allowsMultipleSelection: true,
-      selectionLimit: remaining,
-      quality: 1,
-      exif: true,
-      legacy: true,
-    });
-    if (result.canceled) return;
+    setPhotoPickerSession(sIdx);
+    setPhotoPickerOpen(true);
+  };
+
+  const handlePickerConfirm = async (assets: MediaLibrary.Asset[]) => {
+    const sIdx = photoPickerSession;
+    setPhotoPickerOpen(false);
+    setPhotoPickerSession(null);
+    if (sIdx == null || assets.length === 0) return;
     try {
       const addedUris: string[] = [];
       const metaEntries: Array<[string, MediaMeta]> = [];
-      for (const asset of result.assets) {
-        const exif = asset.exif as Record<string, unknown> | null;
-        let gps = parseExifGps(exif);
-        if (!gps) {
-          gps = await lookupAssetLocation({
-            assetId: asset.assetId,
-            fileName: asset.fileName,
-            capturedAt: parseExifDateTime(exif),
-          });
-        }
-        if (asset.type === 'video') {
-          const { videoUri, thumbnailUri } = await persistVideo(asset.uri);
+      const newAssetIds: Record<string, string> = {};
+      const exifDates: string[] = [];
+
+      for (const asset of assets) {
+        const info = await MediaLibrary.getAssetInfoAsync(asset);
+        const sourceUri = info?.localUri ?? asset.uri;
+        const capturedIso = asset.creationTime
+          ? new Date(asset.creationTime).toISOString()
+          : null;
+        const dateOnly = capturedIso ? capturedIso.slice(0, 10) : null;
+        if (dateOnly) exifDates.push(dateOnly);
+
+        if (asset.mediaType === 'video') {
+          const { videoUri, thumbnailUri } = await persistVideo(sourceUri);
           addedUris.push(videoUri);
+          newAssetIds[videoUri] = asset.id;
           metaEntries.push([
             videoUri,
             {
               mediaType: 'video',
               thumbnailUri,
-              capturedAt: parseExifDateTime(exif),
-              latitude: gps?.latitude ?? null,
-              longitude: gps?.longitude ?? null,
+              capturedAt: capturedIso,
+              latitude: info?.location?.latitude ?? null,
+              longitude: info?.location?.longitude ?? null,
             },
           ]);
         } else {
-          const photoUri = await persistPhoto(asset.uri);
+          const photoUri = await persistPhoto(sourceUri);
           addedUris.push(photoUri);
+          newAssetIds[photoUri] = asset.id;
           metaEntries.push([
             photoUri,
             {
               mediaType: 'photo',
               thumbnailUri: null,
-              capturedAt: parseExifDateTime(exif),
-              latitude: gps?.latitude ?? null,
-              longitude: gps?.longitude ?? null,
+              capturedAt: capturedIso,
+              latitude: info?.location?.latitude ?? null,
+              longitude: info?.location?.longitude ?? null,
             },
           ]);
         }
       }
+
       setSessions(prev =>
         prev.map((s, i) => (i === sIdx ? [...s, ...addedUris] : s))
       );
       mergeMedia(metaEntries);
-      maybeApplyExifDate(result.assets);
+      setUriToAssetId(prev => ({ ...prev, ...newAssetIds }));
+
+      if (!userTouchedDate && !editingId && exifDates.length > 0) {
+        const earliest = exifDates.sort()[0];
+        if (earliest !== entryDate) {
+          setEntryDate(earliest);
+          setDateAutoSet(true);
+        }
+      }
     } catch (e) {
       Alert.alert('추가 실패', e instanceof Error ? e.message : String(e));
     }
   };
+
+  const existingAssetIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const session of sessions) {
+      for (const uri of session) {
+        const id = uriToAssetId[uri];
+        if (id) ids.add(id);
+      }
+    }
+    return ids;
+  }, [sessions, uriToAssetId]);
+
+  const photoPickerRemaining =
+    photoPickerSession != null
+      ? MAX_PHOTOS_PER_SESSION - sessions[photoPickerSession]?.length ?? 0
+      : MAX_PHOTOS_PER_SESSION;
 
   const takePhoto = async (sIdx: number) => {
     if (sessions[sIdx].length >= MAX_PHOTOS_PER_SESSION) {
@@ -772,6 +805,17 @@ export default function DiaryEditorScreen() {
           setAnniversaryPickerOpen(false);
         }}
         initialDate={entryDate}
+      />
+
+      <PhotoLibraryPicker
+        visible={photoPickerOpen}
+        onClose={() => {
+          setPhotoPickerOpen(false);
+          setPhotoPickerSession(null);
+        }}
+        onConfirm={handlePickerConfirm}
+        excludedAssetIds={existingAssetIds}
+        maxSelection={photoPickerRemaining}
       />
     </SafeAreaView>
   );
