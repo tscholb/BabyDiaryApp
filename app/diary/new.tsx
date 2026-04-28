@@ -218,6 +218,7 @@ export default function DiaryEditorScreen() {
       selectionLimit: remaining,
       quality: 1,
       exif: true,
+      legacy: true,
     });
     if (result.canceled) return;
     try {
@@ -228,19 +229,22 @@ export default function DiaryEditorScreen() {
         const exif = asset.exif as Record<string, unknown> | null;
         let gps = parseExifGps(exif);
         if (!gps) {
-          const dbg = await debugLookupAssetLocation(
-            asset.assetId,
-            asset.fileName
-          );
+          const hints = {
+            assetId: asset.assetId,
+            fileName: asset.fileName,
+            capturedAt: parseExifDateTime(exif),
+          };
+          const dbg = await debugLookupAssetLocation(hints);
           debugReports.push(
             `assetId: ${dbg.assetId}\n` +
               `fileName: ${dbg.fileName}\n` +
+              `capturedAt: ${dbg.capturedAt}\n` +
               `MediaLib 권한: ${dbg.permissionGranted}\n` +
               `byId 결과: ${dbg.byIdLookup}\n` +
-              `byName 결과: ${dbg.byNameLookup}\n` +
+              `byName/time 결과: ${dbg.byNameOrTimeLookup}\n` +
               `최종: ${dbg.finalLocation}`
           );
-          gps = await lookupAssetLocation(asset.assetId, asset.fileName);
+          gps = await lookupAssetLocation(hints);
         }
         if (asset.type === 'video') {
           const { videoUri, thumbnailUri } = await persistVideo(asset.uri);
