@@ -56,6 +56,14 @@
         }
       ],
       [
+        "expo-media-library",
+        {
+          "photosPermission": "사진의 촬영 위치를 일기 지도에 표시하려면 사진 접근 권한이 필요합니다.",
+          "savePhotosPermission": "사진을 갤러리에 저장하려면 권한이 필요합니다.",
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png"
