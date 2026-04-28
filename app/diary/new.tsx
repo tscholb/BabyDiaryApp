@@ -45,7 +45,10 @@ import { getActiveBabyId } from '@/src/utils/activeBaby';
 import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { parseExifDate, parseExifDateTime, prettyDate, todayISO } from '@/src/utils/date';
 import { parseExifGps } from '@/src/utils/exif';
-import { ensureMediaLocationPermission } from '@/src/utils/permissions';
+import {
+  debugMediaLocation,
+  ensureMediaLocationPermission,
+} from '@/src/utils/permissions';
 import { safeBack } from '@/src/utils/navigation';
 import { groupPhotosBySession } from '@/src/utils/sessions';
 
@@ -275,9 +278,14 @@ export default function DiaryEditorScreen() {
       mergeMedia(metaEntries);
       maybeApplyExifDate(result.assets);
       if (failureReports.length > 0) {
+        const permState = await debugMediaLocation();
+        const header =
+          `Android API: ${permState.apiLevel ?? 'n/a'}\n` +
+          `ACCESS_MEDIA_LOCATION granted: ${permState.granted}\n` +
+          `Request result: ${permState.requestResult}\n\n---\n\n`;
         Alert.alert(
           'GPS 파싱 실패 (디버그)',
-          failureReports.join('\n\n---\n\n').slice(0, 1500)
+          (header + failureReports.join('\n\n---\n\n')).slice(0, 1800)
         );
       }
     } catch (e) {
