@@ -46,6 +46,7 @@ import { getBabyAgeLabel } from '@/src/utils/babyAge';
 import { parseExifDate, parseExifDateTime, prettyDate, todayISO } from '@/src/utils/date';
 import { parseExifGps } from '@/src/utils/exif';
 import {
+  debugLookupAssetLocation,
   lookupAssetLocation,
   requestMediaLibraryPermission,
 } from '@/src/utils/mediaLibraryGps';
@@ -222,10 +223,23 @@ export default function DiaryEditorScreen() {
     try {
       const addedUris: string[] = [];
       const metaEntries: Array<[string, MediaMeta]> = [];
+      const debugReports: string[] = [];
       for (const asset of result.assets) {
         const exif = asset.exif as Record<string, unknown> | null;
         let gps = parseExifGps(exif);
         if (!gps) {
+          const dbg = await debugLookupAssetLocation(
+            asset.assetId,
+            asset.fileName
+          );
+          debugReports.push(
+            `assetId: ${dbg.assetId}\n` +
+              `fileName: ${dbg.fileName}\n` +
+              `MediaLib 권한: ${dbg.permissionGranted}\n` +
+              `byId 결과: ${dbg.byIdLookup}\n` +
+              `byName 결과: ${dbg.byNameLookup}\n` +
+              `최종: ${dbg.finalLocation}`
+          );
           gps = await lookupAssetLocation(asset.assetId, asset.fileName);
         }
         if (asset.type === 'video') {
@@ -261,6 +275,12 @@ export default function DiaryEditorScreen() {
       );
       mergeMedia(metaEntries);
       maybeApplyExifDate(result.assets);
+      if (debugReports.length > 0) {
+        Alert.alert(
+          'GPS 조회 디버그',
+          debugReports.join('\n\n---\n\n').slice(0, 1800)
+        );
+      }
     } catch (e) {
       Alert.alert('추가 실패', e instanceof Error ? e.message : String(e));
     }

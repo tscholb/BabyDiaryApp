@@ -17,7 +17,6 @@ export async function lookupAssetLocation(
   if (Platform.OS !== 'android') return null;
 
   try {
-    // Best path: the picker handed us a MediaStore id.
     if (assetId) {
       const info = await MediaLibrary.getAssetInfoAsync(assetId);
       if (info?.location) {
@@ -27,8 +26,6 @@ export async function lookupAssetLocation(
         };
       }
     }
-
-    // Fallback: scan the most recent assets and match by filename.
     if (fileName) {
       const result = await MediaLibrary.getAssetsAsync({
         mediaType: ['photo', 'video'],
@@ -47,9 +44,93 @@ export async function lookupAssetLocation(
       }
     }
   } catch {
-    // Permission missing, asset gone, etc. — silently fall back to no GPS.
+    // ignore
   }
   return null;
+}
+
+export type GpsLookupDebug = {
+  assetId: string;
+  fileName: string;
+  permissionGranted: boolean;
+  byIdLookup: string;
+  byNameLookup: string;
+  finalLocation: string;
+};
+
+// Verbose variant for debugging — never throws, returns a structured report.
+export async function debugLookupAssetLocation(
+  assetId: string | null | undefined,
+  fileName: string | null | undefined
+): Promise<GpsLookupDebug> {
+  const out: GpsLookupDebug = {
+    assetId: assetId ?? '(없음)',
+    fileName: fileName ?? '(없음)',
+    permissionGranted: false,
+    byIdLookup: 'not-attempted',
+    byNameLookup: 'not-attempted',
+    finalLocation: 'none',
+  };
+  if (Platform.OS !== 'android') {
+    out.byIdLookup = 'ios-skip';
+    return out;
+  }
+  try {
+    const perm = await MediaLibrary.getPermissionsAsync();
+    out.permissionGranted = perm.granted;
+  } catch (e) {
+    out.byIdLookup = `perm-err: ${e instanceof Error ? e.message : String(e)}`;
+    return out;
+  }
+
+  if (assetId) {
+    try {
+      const info = await MediaLibrary.getAssetInfoAsync(assetId);
+      if (!info) {
+        out.byIdLookup = 'no-info';
+      } else if (info.location) {
+        out.byIdLookup = `loc=${info.location.latitude.toFixed(4)},${info.location.longitude.toFixed(4)}`;
+        out.finalLocation = out.byIdLookup;
+        return out;
+      } else {
+        out.byIdLookup = 'info-but-no-location';
+      }
+    } catch (e) {
+      out.byIdLookup = `err: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  } else {
+    out.byIdLookup = 'no-assetId';
+  }
+
+  if (fileName) {
+    try {
+      const result = await MediaLibrary.getAssetsAsync({
+        mediaType: ['photo', 'video'],
+        first: 200,
+        sortBy: [MediaLibrary.SortBy.modificationTime],
+      });
+      const match = result.assets.find(a => a.filename === fileName);
+      if (!match) {
+        out.byNameLookup = `no-match (scanned ${result.assets.length})`;
+      } else {
+        const info = await MediaLibrary.getAssetInfoAsync(match);
+        if (!info) {
+          out.byNameLookup = 'matched-but-no-info';
+        } else if (info.location) {
+          out.byNameLookup = `loc=${info.location.latitude.toFixed(4)},${info.location.longitude.toFixed(4)}`;
+          out.finalLocation = out.byNameLookup;
+        } else {
+          out.byNameLookup = 'matched-but-no-location';
+        }
+      }
+    } catch (e) {
+      out.byNameLookup = `err: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  } else {
+    out.byNameLookup = 'no-fileName';
+  }
+
+  return out;
 }
 
 // Request MediaLibrary permission. Calling this also implicitly requests
