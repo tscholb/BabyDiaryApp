@@ -1,3 +1,9 @@
+import {
+  endOfWeek,
+  format,
+  startOfDay,
+  startOfWeek,
+} from 'date-fns';
 import * as MediaLibrary from 'expo-media-library';
 import { useEffect, useMemo, useState } from 'react';
 import {
@@ -19,6 +25,89 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 const RECENT_THRESHOLD_MS = 3 * 24 * 60 * 60 * 1000;
 const PAGE_SIZE = 60;
 const COLUMNS = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토'];
+
+type SectionItem =
+  | { type: 'header'; key: string; label: string }
+  | { type: 'row'; key: string; assets: MediaLibrary.Asset[] };
+
+function bucketFor(
+  asset: MediaLibrary.Asset,
+  todayStart: Date
+): { key: string; label: string; sortKey: number } | null {
+  if (!asset.creationTime) return null;
+  const date = new Date(asset.creationTime);
+  const photoStart = startOfDay(date);
+  const dayDiff = Math.floor(
+    (todayStart.getTime() - photoStart.getTime()) / DAY_MS
+  );
+
+  if (dayDiff < 7) {
+    const key = format(photoStart, 'yyyy-MM-dd');
+    let label: string;
+    if (dayDiff === 0) label = `오늘 · ${format(photoStart, 'M월 d일')}`;
+    else if (dayDiff === 1) label = `어제 · ${format(photoStart, 'M월 d일')}`;
+    else
+      label = `${format(photoStart, 'M월 d일')} (${WEEKDAY[photoStart.getDay()]})`;
+    return { key, label, sortKey: photoStart.getTime() };
+  }
+  if (dayDiff < 30) {
+    const weekStart = startOfWeek(photoStart, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(photoStart, { weekStartsOn: 1 });
+    const key = `week-${format(weekStart, 'yyyy-MM-dd')}`;
+    const label = `${format(weekStart, 'M월 d일')} ~ ${format(weekEnd, 'M월 d일')}`;
+    return { key, label, sortKey: weekStart.getTime() };
+  }
+  const monthStart = new Date(photoStart.getFullYear(), photoStart.getMonth(), 1);
+  const key = `month-${format(monthStart, 'yyyy-MM')}`;
+  const label = format(monthStart, 'yyyy년 M월');
+  return { key, label, sortKey: monthStart.getTime() };
+}
+
+function buildSections(
+  assets: MediaLibrary.Asset[],
+  todayStart: Date
+): SectionItem[] {
+  const buckets = new Map<
+    string,
+    { label: string; sortKey: number; assets: MediaLibrary.Asset[] }
+  >();
+  for (const asset of assets) {
+    const bucket = bucketFor(asset, todayStart);
+    if (!bucket) continue;
+    const existing = buckets.get(bucket.key);
+    if (existing) {
+      existing.assets.push(asset);
+    } else {
+      buckets.set(bucket.key, {
+        label: bucket.label,
+        sortKey: bucket.sortKey,
+        assets: [asset],
+      });
+    }
+  }
+  const sorted = Array.from(buckets.values()).sort(
+    (a, b) => b.sortKey - a.sortKey
+  );
+  const items: SectionItem[] = [];
+  for (const bucket of sorted) {
+    items.push({
+      type: 'header',
+      key: `header-${bucket.label}`,
+      label: bucket.label,
+    });
+    for (let i = 0; i < bucket.assets.length; i += COLUMNS) {
+      items.push({
+        type: 'row',
+        key: `row-${bucket.label}-${i}`,
+        assets: bucket.assets.slice(i, i + COLUMNS),
+      });
+    }
+  }
+  return items;
+}
 
 type Props = {
   visible: boolean;
@@ -90,7 +179,13 @@ export function PhotoLibraryPicker({
     }
   }
 
+  const todayStart = useMemo(() => startOfDay(new Date()), [visible]);
   const recentThreshold = useMemo(() => Date.now() - RECENT_THRESHOLD_MS, [visible]);
+
+  const items = useMemo(
+    () => buildSections(assets, todayStart),
+    [assets, todayStart]
+  );
 
   const isAlreadyAdded = (id: string) => excludedAssetIds.has(id);
 
@@ -102,6 +197,56 @@ export function PhotoLibraryPicker({
       if (prev.length >= maxSelection) return prev;
       return [...prev, asset];
     });
+  };
+
+  const renderCell = (asset: MediaLibrary.Asset) => {
+    const added = isAlreadyAdded(asset.id);
+    const sIdx = selected.findIndex(a => a.id === asset.id);
+    const isNew =
+      asset.creationTime != null && asset.creationTime > recentThreshold;
+    const isVideo = asset.mediaType === 'video';
+    return (
+      <Pressable
+        key={asset.id}
+        onPress={() => toggle(asset)}
+        style={{
+          width: cellSize,
+          height: cellSize,
+          margin: 1,
+        }}>
+        <Image
+          source={{ uri: asset.uri }}
+          style={{
+            width: '100%',
+            height: '100%',
+            opacity: added ? 0.35 : 1,
+            backgroundColor: palette.surfaceAlt,
+          }}
+        />
+        {added && (
+          <View style={styles.addedOverlay}>
+            <Text style={styles.addedText}>✓ 추가됨</Text>
+          </View>
+        )}
+        {!added && sIdx >= 0 && (
+          <View
+            style={[styles.selectionDot, { backgroundColor: palette.tint }]}>
+            <Text style={styles.selectionDotText}>{sIdx + 1}</Text>
+          </View>
+        )}
+        {!added && sIdx < 0 && <View style={styles.selectionRing} />}
+        {isNew && (
+          <View style={[styles.newBadge, { backgroundColor: palette.tint }]}>
+            <Text style={styles.newBadgeText}>NEW</Text>
+          </View>
+        )}
+        {isVideo && (
+          <View style={styles.videoBadge} pointerEvents="none">
+            <Text style={styles.videoBadgeText}>▶</Text>
+          </View>
+        )}
+      </Pressable>
+    );
   };
 
   return (
@@ -146,9 +291,8 @@ export function PhotoLibraryPicker({
           </View>
         ) : (
           <FlatList
-            data={assets}
-            keyExtractor={item => item.id}
-            numColumns={COLUMNS}
+            data={items}
+            keyExtractor={item => item.key}
             onEndReached={() => {
               if (hasMore && !loading && endCursor) {
                 fetchPage(endCursor, false);
@@ -156,61 +300,38 @@ export function PhotoLibraryPicker({
             }}
             onEndReachedThreshold={0.6}
             renderItem={({ item }) => {
-              const added = isAlreadyAdded(item.id);
-              const sIdx = selected.findIndex(a => a.id === item.id);
-              const isNew =
-                item.creationTime != null &&
-                item.creationTime > recentThreshold;
-              const isVideo = item.mediaType === 'video';
+              if (item.type === 'header') {
+                return (
+                  <View
+                    style={[
+                      styles.sectionHeader,
+                      {
+                        backgroundColor: palette.background,
+                        borderBottomColor: palette.border,
+                      },
+                    ]}>
+                    <Text
+                      style={[
+                        styles.sectionHeaderText,
+                        { color: palette.text },
+                      ]}>
+                      {item.label}
+                    </Text>
+                  </View>
+                );
+              }
               return (
-                <Pressable
-                  onPress={() => toggle(item)}
-                  style={{
-                    width: cellSize,
-                    height: cellSize,
-                    margin: 1,
-                  }}>
-                  <Image
-                    source={{ uri: item.uri }}
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      opacity: added ? 0.35 : 1,
-                      backgroundColor: palette.surfaceAlt,
-                    }}
-                  />
-                  {added && (
-                    <View style={styles.addedOverlay}>
-                      <Text style={styles.addedText}>✓ 추가됨</Text>
-                    </View>
+                <View style={styles.row}>
+                  {item.assets.map(asset => renderCell(asset))}
+                  {Array.from({ length: COLUMNS - item.assets.length }).map(
+                    (_, i) => (
+                      <View
+                        key={`pad-${i}`}
+                        style={{ width: cellSize, height: cellSize, margin: 1 }}
+                      />
+                    )
                   )}
-                  {!added && sIdx >= 0 && (
-                    <View
-                      style={[
-                        styles.selectionDot,
-                        { backgroundColor: palette.tint },
-                      ]}>
-                      <Text style={styles.selectionDotText}>{sIdx + 1}</Text>
-                    </View>
-                  )}
-                  {!added && sIdx < 0 && (
-                    <View style={styles.selectionRing} />
-                  )}
-                  {isNew && (
-                    <View
-                      style={[
-                        styles.newBadge,
-                        { backgroundColor: palette.tint },
-                      ]}>
-                      <Text style={styles.newBadgeText}>NEW</Text>
-                    </View>
-                  )}
-                  {isVideo && (
-                    <View style={styles.videoBadge} pointerEvents="none">
-                      <Text style={styles.videoBadgeText}>▶</Text>
-                    </View>
-                  )}
-                </Pressable>
+                </View>
               );
             }}
             ListFooterComponent={
@@ -248,6 +369,14 @@ const styles = StyleSheet.create({
   },
   headerBtn: { fontSize: 15 },
   title: { fontSize: 16, fontWeight: '600' },
+  sectionHeader: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginTop: 4,
+  },
+  sectionHeaderText: { fontSize: 14, fontWeight: '700' },
+  row: { flexDirection: 'row' },
   addedOverlay: {
     position: 'absolute',
     bottom: 6,
