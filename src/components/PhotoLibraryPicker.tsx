@@ -33,12 +33,20 @@ type SectionItem =
   | { type: 'header'; key: string; label: string }
   | { type: 'row'; key: string; assets: MediaLibrary.Asset[] };
 
+export function effectiveTime(asset: MediaLibrary.Asset): number {
+  if (asset.creationTime && asset.creationTime > 0) return asset.creationTime;
+  if (asset.modificationTime && asset.modificationTime > 0)
+    return asset.modificationTime;
+  return 0;
+}
+
 function bucketFor(
   asset: MediaLibrary.Asset,
   todayStart: Date
 ): { key: string; label: string; sortKey: number } | null {
-  if (!asset.creationTime) return null;
-  const date = new Date(asset.creationTime);
+  const time = effectiveTime(asset);
+  if (!time) return null;
+  const date = new Date(time);
   const photoStart = startOfDay(date);
   const dayDiff = Math.floor(
     (todayStart.getTime() - photoStart.getTime()) / DAY_MS
@@ -87,6 +95,9 @@ function buildSections(
         assets: [asset],
       });
     }
+  }
+  for (const bucket of buckets.values()) {
+    bucket.assets.sort((a, b) => effectiveTime(b) - effectiveTime(a));
   }
   const sorted = Array.from(buckets.values()).sort(
     (a, b) => b.sortKey - a.sortKey
@@ -169,7 +180,7 @@ export function PhotoLibraryPicker({
         first: PAGE_SIZE,
         after,
         mediaType: ['photo', 'video'],
-        sortBy: [[MediaLibrary.SortBy.creationTime, false]],
+        sortBy: [[MediaLibrary.SortBy.modificationTime, false]],
       });
       setAssets(prev => (replace ? result.assets : [...prev, ...result.assets]));
       setEndCursor(result.endCursor);
@@ -202,8 +213,8 @@ export function PhotoLibraryPicker({
   const renderCell = (asset: MediaLibrary.Asset) => {
     const added = isAlreadyAdded(asset.id);
     const sIdx = selected.findIndex(a => a.id === asset.id);
-    const isNew =
-      asset.creationTime != null && asset.creationTime > recentThreshold;
+    const assetTime = effectiveTime(asset);
+    const isNew = assetTime > 0 && assetTime > recentThreshold;
     const isVideo = asset.mediaType === 'video';
     return (
       <Pressable

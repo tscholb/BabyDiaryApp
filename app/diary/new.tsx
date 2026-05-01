@@ -27,7 +27,7 @@ import {
   AnniversaryPicker,
   type AnniversaryDraft,
 } from '@/src/components/AnniversaryPicker';
-import { PhotoLibraryPicker } from '@/src/components/PhotoLibraryPicker';
+import { PhotoLibraryPicker, effectiveTime } from '@/src/components/PhotoLibraryPicker';
 import {
   createAnniversary,
   deleteAnniversary,
@@ -233,9 +233,8 @@ export default function DiaryEditorScreen() {
       for (const asset of assets) {
         const info = await MediaLibrary.getAssetInfoAsync(asset);
         const sourceUri = info?.localUri ?? asset.uri;
-        const capturedIso = asset.creationTime
-          ? new Date(asset.creationTime).toISOString()
-          : null;
+        const time = effectiveTime(asset);
+        const capturedIso = time > 0 ? new Date(time).toISOString() : null;
         const dateOnly = capturedIso ? capturedIso.slice(0, 10) : null;
         if (dateOnly) exifDates.push(dateOnly);
 
